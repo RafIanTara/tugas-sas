@@ -192,7 +192,7 @@ function App() {
                     responseText = await result.response.text();
                     success = true; break;
                 } catch (err) {
-                    const modelBackup = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const modelBackup = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
                     let resultBackup;
                     if (currentImageFile) { 
                         const imagePart = await fileToGenerativePart(currentImageFile);
