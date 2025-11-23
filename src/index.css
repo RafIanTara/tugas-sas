@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0b1121; /* Warna dasar sangat gelap */
+  color: white;
+  font-family: 'Inter', sans-serif;
+  
+  /* MOTIF GRID CYBERPUNK - Biar gak sepi */
+  background-image: 
+    linear-gradient(to right, #1e293b 1px, transparent 1px),
+    linear-gradient(to bottom, #1e293b 1px, transparent 1px);
+  background-size: 40px 40px; /* Ukuran kotak grid */
+  background-attachment: fixed; /* Biar background diem pas discroll */
+}
+
+/* Custom Scrollbar biar rapi (ngilangin scrollbar kasar bawaan browser) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Hilangkan scrollbar untuk navigasi hari di HP tapi tetap bisa discroll */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
