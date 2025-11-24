@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-// Icon Lengkap
 import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote } from 'lucide-react'
 import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"
 import { db } from "./services/firebase"
@@ -8,7 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai"
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from "framer-motion"
 
-// --- DATA STATIC (FALLBACK KALAU DB KOSONG) ---
+// --- DATA STATIC ---
 const DEFAULT_QUOTES = [
   { text: "Jangan lupa bernapas, coding butuh oksigen.", author: "Admin" },
 ]
@@ -50,34 +49,29 @@ function App() {
   const [hariPilihan, setHariPilihan] = useState(namaHariIni)
   const [greeting, setGreeting] = useState('')
   
-  // State Quote
   const [quote, setQuote] = useState(DEFAULT_QUOTES[0])
-  const [newQuoteText, setNewQuoteText] = useState('') // Input buat quote baru
+  const [newQuoteText, setNewQuoteText] = useState('') 
 
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
-  // State Admin & Config
   const [isAdmin, setIsAdmin] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [pinInput, setPinInput] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
 
-  // State Modals
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [isPiketModalOpen, setIsPiketModalOpen] = useState(false)
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false)
   const [isAiModalOpen, setIsAiModalOpen] = useState(false)
-  const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false) // NEW: MODAL QUOTE
+  const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false)
 
-  // Inputs
   const [newTask, setNewTask] = useState({ judul: '', mapel: '' })
   const [scheduleInput, setScheduleInput] = useState('')
   const [piketInput, setPiketInput] = useState('') 
   const [infoInput, setInfoInput] = useState('')
 
-  // AI State
   const [chatInput, setChatInput] = useState('')
   const [chatHistory, setChatHistory] = useState([
     { role: 'model', text: 'Halo Wak! Gue asisten AI TKJ. Kunci otak gue aman di database. 😎' }
@@ -93,15 +87,12 @@ function App() {
   const { data: dataJadwal, loading: loadingJadwal } = useFirestore('jadwal')
   const { data: dataPiket, loading: loadingPiket } = useFirestore('piket') 
   const { data: dataInfo } = useFirestore('pengumuman')
-  const { data: dataQuotes, loading: loadingQuotes } = useFirestore('quotes') // NEW: HOOK QUOTES
+  const { data: dataQuotes, loading: loadingQuotes } = useFirestore('quotes')
   
   const jadwalTampil = dataJadwal.find(j => j.id === hariPilihan)
   const piketTampil = dataPiket.find(p => p.id === hariPilihan)
-
-  // Gabungkan Data Quotes (DB + Default jika DB kosong)
   const activeQuotes = dataQuotes.length > 0 ? dataQuotes : DEFAULT_QUOTES
 
-  // --- EFFECTS ---
   useEffect(() => {
     const savedAuth = localStorage.getItem('tkj_admin_auth')
     if (savedAuth === 'true') setIsAdmin(true)
@@ -126,13 +117,10 @@ function App() {
     }
   }, [])
 
-  // LOGIKA GANTI QUOTE (Slide Show)
   useEffect(() => {
     const quoteInterval = setInterval(() => {
       setQuote(prevQuote => {
-        // Kalau cuma ada 1 quote, ya tampilkan itu aja
         if (activeQuotes.length <= 1) return activeQuotes[0];
-
         let randomIndex;
         do { randomIndex = Math.floor(Math.random() * activeQuotes.length) } 
         while (activeQuotes[randomIndex].text === prevQuote.text);
@@ -140,13 +128,13 @@ function App() {
       })
     }, 5000)
     return () => clearInterval(quoteInterval)
-  }, [activeQuotes]) // Update kalau dataQuotes berubah
+  }, [activeQuotes])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [chatHistory, isAiModalOpen, imagePreview])
 
-  // --- HANDLERS ---
+  // HANDLERS
   const handleLogin = (e) => {
     e.preventDefault()
     if (pinInput === 'tkj123') {
@@ -159,33 +147,17 @@ function App() {
   }
 
   const handleSaveApiKey = async (e) => {
-    e.preventDefault()
-    if (!apiKeyInput.trim()) return
-    try {
-        await setDoc(doc(db, 'settings', 'ai_config'), { apiKey: apiKeyInput, updatedAt: serverTimestamp() })
-        alert("API Key disimpan! 🧠"); setIsSettingsModalOpen(false); setApiKeyInput('')
-    } catch (error) { alert("Gagal simpan key.") }
+    e.preventDefault(); if (!apiKeyInput.trim()) return;
+    try { await setDoc(doc(db, 'settings', 'ai_config'), { apiKey: apiKeyInput, updatedAt: serverTimestamp() }); alert("Key tersimpan!"); setIsSettingsModalOpen(false); setApiKeyInput('') } catch (error) { alert("Gagal simpan.") }
   }
 
-  // NEW: HANDLE TAMBAH QUOTE
   const handleAddQuote = async (e) => {
-    e.preventDefault()
-    if (!newQuoteText.trim()) return
-    try {
-        await addDoc(collection(db, 'quotes'), { 
-            text: newQuoteText, 
-            author: "Admin", // Otomatis Admin
-            createdAt: serverTimestamp() 
-        })
-        setNewQuoteText('')
-    } catch (error) { console.error(error) }
+    e.preventDefault(); if (!newQuoteText.trim()) return;
+    try { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText('') } catch (error) { console.error(error) }
   }
 
-  // NEW: HANDLE HAPUS QUOTE
   const handleDeleteQuote = async (id) => {
-      if (confirm("Hapus kata-kata mutiara ini?")) {
-          try { await deleteDoc(doc(db, 'quotes', id)) } catch (error) { console.error(error) }
-      }
+      if (confirm("Hapus kata-kata ini?")) { try { await deleteDoc(doc(db, 'quotes', id)) } catch (error) { console.error(error) } }
   }
 
   const handleFileChange = (event) => {
@@ -228,7 +200,7 @@ function App() {
         if (docSnap.exists()) { dbApiKey = docSnap.data().apiKey; } else { throw new Error("API Key belum disetting di Database!"); }
 
         const genAI = new GoogleGenerativeAI(dbApiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         let result;
         if (currentImageFile) {
@@ -243,7 +215,6 @@ function App() {
         setChatHistory(prev => [...prev, { role: 'model', text: response.text() }])
 
     } catch (error) {
-        console.error("AI Error:", error)
         let msg = "Server Error."
         if (error.message.includes("403") || error.message.includes("404")) msg = "API Key Salah/Limit. Cek Settings Admin!";
         setChatHistory(prev => [...prev, { role: 'model', text: `Gagal: ${msg}` }])
@@ -270,17 +241,37 @@ function App() {
       <div className="pt-8 px-5 pb-2 md:p-8 md:pb-0 max-w-7xl mx-auto">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3 mb-2">
                 <p className="text-blue-400 font-medium text-sm md:text-base tracking-wide uppercase flex items-center gap-2">
                     {greeting} 
-                    {isAdmin ? <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-500/50 flex items-center gap-1 cursor-pointer" onClick={handleLogout}><Unlock size={10}/> ADMIN</span> : <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 cursor-pointer" onClick={() => setIsLoginModalOpen(true)}><Lock size={10}/> GUEST</span>}
+                    
+                    {/* --- BADGE ADMIN + FOTO PROFIL GITHUB --- */}
+                    {isAdmin ? (
+                        <div className="flex items-center gap-2 cursor-pointer group bg-slate-800/50 pr-3 pl-1 py-1 rounded-full border border-green-500/30 hover:border-green-500 transition-all" onClick={handleLogout} title="Klik untuk Logout">
+                            <img 
+                                src="https://avatars.githubusercontent.com/u/214599783?v=4" 
+                                alt="Admin" 
+                                className="w-6 h-6 rounded-full border border-green-400 shadow-[0_0_10px_rgba(74,222,128,0.5)]" 
+                            />
+                            <span className="text-green-400 text-[10px] font-bold tracking-wider flex items-center gap-1">
+                                ADMIN <Unlock size={10}/>
+                            </span>
+                        </div>
+                    ) : (
+                        <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-1 rounded border border-slate-600 flex items-center gap-1 cursor-pointer hover:bg-slate-600 transition-colors" onClick={() => setIsLoginModalOpen(true)}>
+                            <Lock size={10}/> GUEST MODE
+                        </span>
+                    )}
                 </p>
+                
+                {/* TOMBOL SETTING KEY (HANYA ADMIN) */}
                 {isAdmin && (
                     <button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-400 p-1.5 rounded-full transition-colors" title="Atur API Key">
-                        <Settings size={14} />
+                        <Settings size={16} />
                     </button>
                 )}
             </div>
+            
             <h1 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 tracking-tighter drop-shadow-sm">XI <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-500">TKJ</span></h1>
             <p className="text-slate-400 text-sm mt-1 flex items-center gap-2"><span className="relative flex h-2 w-2"><span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? 'bg-green-400' : 'bg-red-400'}`}></span><span className={`relative inline-flex rounded-full h-2 w-2 ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span></span> Server Status: <span className={`font-bold ${isOnline ? 'text-green-400' : 'text-red-400'}`}>{isOnline ? 'Online' : 'Offline'}</span></p>
           </div>
@@ -305,12 +296,12 @@ function App() {
         {/* JADWAL */}
         <div className="md:col-span-8 order-2 md:order-4"><div className="bg-slate-900/60 backdrop-blur-md p-5 rounded-3xl border border-slate-700/50 shadow-xl h-full flex flex-col"><div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-blue-500/10 rounded-lg"><BookOpen size={20} className="text-blue-400" /></div><div><h2 className="font-bold text-lg text-white">Jadwal</h2><p className="text-[10px] text-slate-500 uppercase tracking-wider">{hariPilihan}</p></div></div><div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map((hari) => (<button key={hari} onClick={() => setHariPilihan(hari)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap ${hariPilihan === hari ? 'bg-blue-600 border-blue-500 text-white' : 'bg-transparent border-slate-700 text-slate-400'}`}>{hari}</button>))}{isAdmin && !isLibur && <button onClick={openScheduleModal} className="px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700 text-slate-400"><Edit3 size={14} /></button>}</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{isLibur ? <div className="col-span-full py-12 text-center text-slate-500 border-2 border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center"><Coffee size={40} className="mb-2 opacity-50"/><p>Hari Libur, Tidak Ada KBM.</p></div> : loadingJadwal ? <p className="text-slate-500 text-xs">Loading...</p> : jadwalTampil ? (jadwalTampil.mapel.map((mapel, index) => (<div key={index} className="bg-slate-800/40 border border-slate-700/50 p-2 rounded-lg flex items-center gap-2"><span className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center text-[10px] font-bold text-slate-500">{index + 1}</span><span className="font-medium text-slate-300 text-sm truncate">{mapel}</span></div>))) : <div className="col-span-full py-4 text-center text-slate-500 text-sm border-2 border-dashed border-slate-800 rounded-xl">Jadwal Belum Diisi.</div>}</div></div></div>
         
-        {/* 5. QUOTE (DYNAMIC + EDITABLE) */}
+        {/* 5. QUOTE */}
         <div className="md:col-span-4 order-5">
            <div className="h-full bg-slate-900/60 backdrop-blur-md p-6 rounded-3xl border border-slate-700/50 flex flex-col justify-center text-center relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
               
-              {/* TOMBOL EDIT QUOTE (ADMIN ONLY) */}
+              {/* EDIT QUOTE (ADMIN) */}
               {isAdmin && (
                   <button onClick={() => setIsQuoteModalOpen(true)} className="absolute top-3 right-3 text-slate-500 hover:text-blue-400 transition-colors p-2 bg-slate-800/50 rounded-full z-10">
                       <Edit3 size={14} />
@@ -349,35 +340,20 @@ function App() {
       {/* SETTINGS KEY */}
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="AI Configuration"><form onSubmit={handleSaveApiKey} className="space-y-4"><div className="bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20 mb-4"><p className="text-xs text-yellow-400 flex items-center gap-2"><Key size={14}/> <b>PENTING:</b> Masukkan API Key Gemini baru di sini jika Chatbot error/limit.</p></div><div><label className="block text-xs text-slate-400 mb-1">Gemini API Key</label><input type="text" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white focus:border-green-500 focus:outline-none" placeholder="Paste key disini..." /></div><button className="w-full bg-green-600 py-3 rounded-xl font-bold text-white hover:bg-green-500">Simpan Konfigurasi</button></form></Modal>
 
-      {/* AI */}
-      <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant"><div className="flex flex-col h-[50vh] md:h-[400px]"><div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">{chatHistory.map((msg, index) => (<div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>{msg.image && <img src={msg.image} alt="User Upload" className="w-full rounded-lg mb-2 border border-white/20" />}{msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({node, ...props}) => <span className="font-bold text-yellow-400" {...props} />, a: ({node, ...props}) => <a className="text-blue-400 underline" target="_blank" {...props} />, ul: ({node, ...props}) => <ul className="list-disc ml-4 mt-1" {...props} />, li: ({node, ...props}) => <li className="mb-1" {...props} />, code: ({node, ...props}) => <code className="bg-slate-950 px-1 py-0.5 rounded text-green-400 font-mono text-xs border border-slate-700" {...props} /> }}>{msg.text}</ReactMarkdown>}</div></div>))}{isTyping && <div className="flex justify-start"><div className="bg-slate-800 text-slate-400 px-4 py-2 rounded-2xl text-xs border border-slate-700 flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-75"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-150"></div></div></div>}<div ref={chatEndRef} /></div>{imagePreview && (<div className="px-4 py-2 bg-slate-800 border-t border-slate-700 flex justify-between items-center"><div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-600" /><span className="text-xs text-slate-400">Gambar siap dikirim</span></div><button onClick={clearImage} className="text-red-400 hover:text-red-300"><XCircle size={20}/></button></div>)}<form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-800 pt-3"><button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button><input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" /><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 text-sm" /><button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-3 rounded-xl"><Send size={20} /></button></form></div></Modal>
-      
-      {/* CRUD MODALS */}
-      <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title="Tugas Baru"><form onSubmit={handleAddTask} className="space-y-4"><input value={newTask.judul} onChange={e => setNewTask({...newTask, judul: e.target.value})} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white" placeholder="Judul..." autoFocus /><input value={newTask.mapel} onChange={e => setNewTask({...newTask, mapel: e.target.value})} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white" placeholder="Mapel..." /><button className="w-full bg-blue-600 py-3 rounded-xl font-bold text-white">Simpan</button></form></Modal>
-      <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Edit Jadwal"><form onSubmit={handleSaveSchedule} className="space-y-4"><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" placeholder="Mapel pisah koma..." /><button className="w-full bg-green-600 py-3 rounded-xl font-bold text-white">Update</button></form></Modal>
-      <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" /><button className="w-full bg-purple-600 py-3 rounded-xl font-bold text-white">Kirim</button></form></Modal>
-      <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-400 text-xs mb-2">Tulis nama dipisahkan dengan koma (Contoh: Budi, Andi, Siti)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32 focus:border-orange-500 focus:outline-none" placeholder="Nama siswa..." /><button className="w-full bg-orange-600 py-3 rounded-xl font-bold text-white hover:bg-orange-500">Simpan Piket</button></form></Modal>
-
-      {/* NEW: MODAL MANAGE QUOTE */}
+      {/* MANAGE QUOTES */}
       <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes">
         <div className="space-y-6">
-            {/* FORM TAMBAH */}
             <form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-800">
-                <input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="Tulis kata mutiara baru..." />
+                <input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="Kata-kata hari ini..." />
                 <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium">Tambah Quote</button>
             </form>
-
-            {/* LIST QUOTE DB */}
-            <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quotes di Database ({dataQuotes.length})</h4>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Quote Database</h4>
                 {loadingQuotes ? <p className="text-xs text-slate-500">Loading...</p> : 
-                 dataQuotes.length === 0 ? <p className="text-xs text-slate-500 italic">Belum ada quote custom.</p> :
+                 dataQuotes.length === 0 ? <p className="text-xs text-slate-500 italic">Belum ada data custom.</p> :
                  dataQuotes.map((q) => (
                     <div key={q.id} className="flex items-start justify-between p-3 bg-slate-800/50 rounded-xl border border-slate-800 group">
-                        <div>
-                            <p className="text-sm text-slate-200 line-clamp-2">"{q.text}"</p>
-                            <span className="text-[10px] text-slate-500">{q.author}</span>
-                        </div>
+                        <div><p className="text-sm text-slate-200 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-500">{q.author}</span></div>
                         <button onClick={() => handleDeleteQuote(q.id)} className="text-slate-600 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
                     </div>
                  ))
@@ -386,6 +362,13 @@ function App() {
         </div>
       </Modal>
 
+      {/* AI */}
+      <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant"><div className="flex flex-col h-[50vh] md:h-[400px]"><div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">{chatHistory.map((msg, index) => (<div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>{msg.image && <img src={msg.image} alt="User Upload" className="w-full rounded-lg mb-2 border border-white/20" />}{msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({node, ...props}) => <span className="font-bold text-yellow-400" {...props} />, a: ({node, ...props}) => <a className="text-blue-400 underline" target="_blank" {...props} />, ul: ({node, ...props}) => <ul className="list-disc ml-4 mt-1" {...props} />, li: ({node, ...props}) => <li className="mb-1" {...props} />, code: ({node, ...props}) => <code className="bg-slate-950 px-1 py-0.5 rounded text-green-400 font-mono text-xs border border-slate-700" {...props} /> }}>{msg.text}</ReactMarkdown>}</div></div>))}{isTyping && <div className="flex justify-start"><div className="bg-slate-800 text-slate-400 px-4 py-2 rounded-2xl text-xs border border-slate-700 flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-75"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-150"></div></div></div>}<div ref={chatEndRef} /></div>{imagePreview && (<div className="px-4 py-2 bg-slate-800 border-t border-slate-700 flex justify-between items-center"><div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-600" /><span className="text-xs text-slate-400">Gambar siap dikirim</span></div><button onClick={clearImage} className="text-red-400 hover:text-red-300"><XCircle size={20}/></button></div>)}<form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-800 pt-3"><button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button><input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" /><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 text-sm" /><button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-3 rounded-xl"><Send size={20} /></button></form></div></Modal>
+      {/* CRUD MODALS */}
+      <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title="Tugas Baru"><form onSubmit={handleAddTask} className="space-y-4"><input value={newTask.judul} onChange={e => setNewTask({...newTask, judul: e.target.value})} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white" placeholder="Judul..." autoFocus /><input value={newTask.mapel} onChange={e => setNewTask({...newTask, mapel: e.target.value})} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white" placeholder="Mapel..." /><button className="w-full bg-blue-600 py-3 rounded-xl font-bold text-white">Simpan</button></form></Modal>
+      <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Edit Jadwal"><form onSubmit={handleSaveSchedule} className="space-y-4"><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" placeholder="Mapel pisah koma..." /><button className="w-full bg-green-600 py-3 rounded-xl font-bold text-white">Update</button></form></Modal>
+      <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" /><button className="w-full bg-purple-600 py-3 rounded-xl font-bold text-white">Kirim</button></form></Modal>
+      <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-400 text-xs mb-2">Tulis nama dipisahkan dengan koma (Contoh: Budi, Andi, Siti)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32 focus:border-orange-500 focus:outline-none" placeholder="Nama siswa..." /><button className="w-full bg-orange-600 py-3 rounded-xl font-bold text-white hover:bg-orange-500">Simpan Piket</button></form></Modal>
     </div>
   )
 }
