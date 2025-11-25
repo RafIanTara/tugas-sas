@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Project SAS Rafa</string>
+    <string name="title_activity_main">Project SAS Rafa</string>
+    <string name="package_name">com.rafiantara.classdashboard</string>
+    <string name="custom_url_scheme">com.rafiantara.classdashboard</string>
+</resources>
