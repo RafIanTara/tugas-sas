@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download } from 'lucide-react'
+import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter } from 'lucide-react'
 import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"
 import { db } from "./services/firebase"
 import useFirestore from './hooks/useFirestore'
@@ -14,6 +14,16 @@ const DEFAULT_QUOTES = [
   { text: "Duit kas jangan dipake buat beli cilok.", author: "Bendahara" },
   { text: "Error adalah cara komputer bilang 'Coba Lagi'.", author: "System" }
 ]
+
+const DATA_PIKET = {
+  'Senin': ['Ahmad', 'Budi', 'Cecep', 'Dodi'],
+  'Selasa': ['Eko', 'Fajar', 'Gilang', 'Hadi'],
+  'Rabu': ['Indra', 'Joko', 'Kiki', 'Lala'],
+  'Kamis': ['Mamat', 'Nana', 'Oki', 'Putra'],
+  'Jumat': ['Qori', 'Rafa', 'Sandi', 'Tio'],
+  'Sabtu': ['Libur', 'Wak', 'Gak', 'Piket'],
+  'Minggu': ['Libur', 'Cuy']
+}
 
 // --- MODAL COMPONENT ---
 const Modal = ({ isOpen, onClose, title, children }) => {
@@ -69,14 +79,14 @@ function App() {
   const [piketInput, setPiketInput] = useState('') 
   const [infoInput, setInfoInput] = useState('')
   
-  // KAS STATES (UPDATED: JUMLAH JADI STRING BIAR BISA ADA TITIK)
+  // KAS STATES
   const [kasInput, setKasInput] = useState({ 
       tanggal: new Date().toISOString().split('T')[0], 
-      nama: '', 
-      jumlah: '', // Disimpan sebagai string dulu biar bisa diformat (100.000)
-      tipe: 'masuk', 
-      keterangan: '' 
+      nama: '', jumlah: '', tipe: 'masuk', keterangan: '' 
   })
+  // FILTER KAS
+  const [filterBulan, setFilterBulan] = useState(new Date().getMonth() + 1) // Default bulan ini
+  const [filterTahun, setFilterTahun] = useState(new Date().getFullYear()) // Default tahun ini
 
   // AI & PDF STATES
   const [chatInput, setChatInput] = useState('')
@@ -101,19 +111,24 @@ function App() {
   const piketTampil = dataPiket.find(p => p.id === hariPilihan)
   const activeQuotes = dataQuotes.length > 0 ? dataQuotes : DEFAULT_QUOTES
 
-  // SALDO CALCULATOR
+  // --- LOGIC KAS & FILTER ---
+  // 1. Hitung Total Saldo (Semua Waktu)
   const totalSaldo = dataKas.reduce((acc, curr) => curr.tipe === 'masuk' ? acc + Number(curr.jumlah) : acc - Number(curr.jumlah), 0)
-  
-  // FORMATTER RUPIAH (Utility)
   const formatRupiah = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n)
 
-  // HANDLE INPUT ANGKA (AUTO TITIK)
+  // 2. Filter Data Berdasarkan Bulan & Tahun
+  const filteredKas = dataKas.filter(item => {
+      if (!item.tanggal) return false;
+      const date = new Date(item.tanggal);
+      return (date.getMonth() + 1) === parseInt(filterBulan) && date.getFullYear() === parseInt(filterTahun);
+  }).sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal)); // Urutkan tanggal terbaru
+
+  // 3. Hitung Saldo Bulan Ini (Opsional, buat info aja)
+  const saldoBulanIni = filteredKas.reduce((acc, curr) => curr.tipe === 'masuk' ? acc + Number(curr.jumlah) : acc - Number(curr.jumlah), 0)
+
   const handleJumlahChange = (e) => {
-    // Ambil value, buang karakter selain angka
     let rawValue = e.target.value.replace(/[^0-9]/g, '');
-    
     if (rawValue) {
-        // Format jadi ada titiknya (10000 -> 10.000)
         let formatted = parseInt(rawValue).toLocaleString('id-ID');
         setKasInput({ ...kasInput, jumlah: formatted });
     } else {
@@ -121,7 +136,6 @@ function App() {
     }
   }
 
-  // EFFECTS
   useEffect(() => {
     const savedAuth = localStorage.getItem('tkj_admin_auth'); if (savedAuth === 'true') setIsAdmin(true)
     const loadSettings = async () => { try { const docSnap = await getDoc(doc(db, 'settings', 'ai_config')); if (docSnap.exists() && docSnap.data().model) setSelectedModel(docSnap.data().model); } catch (e) {} }; loadSettings();
@@ -149,19 +163,16 @@ function App() {
   const handleAddQuote = async (e) => { e.preventDefault(); if (!newQuoteText.trim()) return; try { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText('') } catch (error) { console.error(error) } }
   const handleDeleteQuote = async (id) => { if (confirm("Hapus kata-kata ini?")) { try { await deleteDoc(doc(db, 'quotes', id)) } catch (error) { console.error(error) } } }
   
-  // KAS LOGIC (IMPROVED: AUTO CLEAN DOTS & EXCEL FORMATTING)
+  // KAS HANDLERS (SAVE & EXPORT FILTERED)
   const handleAddKas = async (e) => {
       e.preventDefault();
       if (!kasInput.nama || !kasInput.jumlah) return;
-      
-      // Bersihkan titik sebelum simpan ke DB (10.000 -> 10000)
       const cleanJumlah = parseInt(kasInput.jumlah.replace(/\./g, ''));
-
       try {
           await addDoc(collection(db, 'uang_kas'), {
               tanggal: kasInput.tanggal,
               nama: kasInput.nama,
-              jumlah: cleanJumlah, // Simpan sebagai angka murni
+              jumlah: cleanJumlah,
               tipe: kasInput.tipe,
               keterangan: kasInput.keterangan || '-',
               createdAt: serverTimestamp()
@@ -174,39 +185,37 @@ function App() {
   const handleDeleteKas = async (id) => { if (confirm("Hapus transaksi ini?")) try { await deleteDoc(doc(db, 'uang_kas', id)) } catch (err) {} }
   
   const handleExportExcel = () => {
-      // Format data biar rapi di Excel
-      const dataToExport = dataKas.map(item => ({
+      // Export HANYA data yang sudah difilter (Bulan Ini)
+      const dataToExport = filteredKas.map(item => ({
           "Tanggal": item.tanggal || '-',
           "Nama Siswa": item.nama,
           "Jenis": item.tipe === 'masuk' ? 'PEMASUKAN' : 'PENGELUARAN',
-          "Jumlah (Rp)": formatRupiah(item.jumlah), // Pakai format rupiah biar ada Rp dan titik
+          "Jumlah (Rp)": formatRupiah(item.jumlah),
           "Keterangan": item.keterangan
       }));
 
-      // Buat Sheet
+      // Tambahkan Baris Total di Bawah
+      dataToExport.push({
+          "Tanggal": "TOTAL",
+          "Nama Siswa": "",
+          "Jenis": "",
+          "Jumlah (Rp)": formatRupiah(saldoBulanIni),
+          "Keterangan": "Saldo Bulan Ini"
+      });
+
       const ws = XLSX.utils.json_to_sheet(dataToExport);
-      
-      // Atur Lebar Kolom (Biar gak sempit kayak tadi)
-      const wscols = [
-          {wch: 15}, // Tanggal
-          {wch: 20}, // Nama
-          {wch: 15}, // Jenis
-          {wch: 20}, // Jumlah
-          {wch: 30}  // Keterangan
-      ];
+      const wscols = [{wch: 15}, {wch: 20}, {wch: 15}, {wch: 20}, {wch: 30}];
       ws['!cols'] = wscols;
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Laporan Kas");
-      XLSX.writeFile(wb, `Laporan_Kas_Kelas_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, `Kas_${filterBulan}_${filterTahun}`);
+      XLSX.writeFile(wb, `Laporan_Kas_Bulan_${filterBulan}_${filterTahun}.xlsx`);
   }
 
-  // PDF LOGIC
+  // AI & PDF
   const handlePdfImageChange = (e) => { if (e.target.files) { const files = Array.from(e.target.files).map(file => ({ file, url: URL.createObjectURL(file) })); setPdfImages(prev => [...prev, ...files]); } }
-  const handleGeneratePdf = () => { /* Logic PDF sama kayak sebelumnya */ setPdfImages([]); setIsPdfModalOpen(false); alert("Fitur PDF Placeholder"); } 
+  const handleGeneratePdf = () => { setPdfImages([]); setIsPdfModalOpen(false); alert("Fitur PDF Placeholder"); } 
   const removePdfImage = (idx) => { const newImg = [...pdfImages]; newImg.splice(idx, 1); setPdfImages(newImg); }
-
-  // AI & CRUD Logic (Standard)
   const handleFileChange = (e) => { const f = e.target.files[0]; if(f){ setImageFile(f); const r = new FileReader(); r.onloadend=()=>setImagePreview(r.result); r.readAsDataURL(f); } }
   const clearImage = () => { setImageFile(null); setImagePreview(null); if(fileInputRef.current) fileInputRef.current.value=''; }
   async function fileToGenerativePart(file) { const r = new FileReader(); const p = new Promise(res => r.onloadend=()=>res(r.result.split(',')[1])); r.readAsDataURL(file); return { inlineData: { data: await p, mimeType: file.type } }; }
@@ -241,9 +250,10 @@ function App() {
           <div className="flex-1 w-full">
             <div className="flex justify-between items-center mb-1">
                 <p className="text-blue-400 font-medium text-xs md:text-base tracking-wide uppercase flex items-center gap-2">
-                    {greeting} {isAdmin ? <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-500/50 flex items-center gap-1 cursor-pointer" onClick={handleLogout}><Unlock size={10}/> ADMIN</span> : <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 cursor-pointer" onClick={() => setIsLoginModalOpen(true)}><Lock size={10}/> GUEST</span>}
+                    {greeting} 
+                    {isAdmin ? <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-500/50 flex items-center gap-1 cursor-pointer" onClick={handleLogout}><Unlock size={10}/> ADMIN</span> : <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 cursor-pointer" onClick={() => setIsLoginModalOpen(true)}><Lock size={10}/> GUEST</span>}
                 </p>
-                {isAdmin && <button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-400 p-1.5 rounded-full transition-colors"><Settings size={16}/></button>}
+                {isAdmin && (<button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-400 p-1.5 rounded-full transition-colors"><Settings size={16}/></button>)}
             </div>
             <div className="flex justify-between items-end">
                 <div><h1 className="text-3xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 tracking-tighter drop-shadow-sm">XI <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-500">TKJ</span></h1></div>
@@ -255,8 +265,6 @@ function App() {
 
       {/* GRID LAYOUT */}
       <div className="p-4 md:p-8 pt-4 max-w-7xl mx-auto flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6">
-        
-        {/* ROW 1: INFO | LINKS | PIKET */}
         <div className="order-1 md:col-span-4 md:order-1"><div className="h-full bg-gradient-to-br from-indigo-900/80 to-slate-900/80 backdrop-blur-md p-5 rounded-3xl border border-indigo-500/30 relative overflow-hidden group shadow-lg"><div className="flex items-center justify-between mb-2 relative z-10"><div className="flex items-center gap-2 bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-500/30"><Megaphone size={14} className="text-indigo-300" /> <span className="text-xs font-bold text-indigo-100 uppercase">Broadcast</span></div>{isAdmin && <button onClick={openInfoModal} className="opacity-60 hover:opacity-100 hover:text-white transition-opacity"><Edit3 size={16} /></button>}</div><div className="relative z-10">{dataInfo.length > 0 ? (<p className="text-indigo-50 text-sm font-medium leading-relaxed whitespace-pre-wrap line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">{dataInfo.find(i => i.id === 'info_utama')?.isi || dataInfo[0]?.isi}</p>) : <div className="text-white/40 italic text-sm">Info kosong.</div>}</div></div></div>
         
         <div className="order-2 md:col-span-4 md:order-2">
@@ -298,7 +306,7 @@ function App() {
         <footer className="order-last md:col-span-12 text-center text-slate-600 text-[10px] mt-4 mb-8 font-medium"><p>Class Dashboard XI TKJ • Developed by <a href="https://rafiantara.fun" target="_blank" className="text-blue-500 hover:text-blue-400 hover:underline">Rafiantara</a></p></footer>
       </div>
 
-      {/* --- MODALS --- */}
+      {/* MODALS (Login, Settings, AI, dll TETAP SAMA) */}
       <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Access"><form onSubmit={handleLogin} className="space-y-4 pt-2"><div className="text-center mb-4"><div className="bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3"><Lock size={32} className="text-slate-400"/></div><p className="text-sm text-slate-400">Masukkan PIN rahasia.</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white tracking-[5px] text-xl focus:outline-none focus:border-blue-500" placeholder="••••" autoFocus maxLength={6}/><button className="w-full bg-blue-600 py-3 rounded-xl font-bold text-white hover:bg-blue-500 transition-colors">Buka Gembok</button></form></Modal>
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="AI Configuration"><form onSubmit={handleSaveSettings} className="space-y-4"><div className="bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20 mb-4"><p className="text-xs text-yellow-400 flex items-center gap-2"><Key size={14}/> <b>PENTING:</b> Masukkan API Key Gemini baru di sini jika Chatbot error/limit.</p></div><div><label className="block text-xs text-slate-400 mb-1">Gemini API Key</label><input type="text" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white focus:border-green-500 focus:outline-none text-sm" placeholder="Paste key disini..." /></div><div><label className="block text-xs text-slate-400 mb-1">Model AI</label><select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white focus:border-green-500 focus:outline-none text-sm"><option value="gemini-1.5-flash">Gemini 1.5 Flash (Stabil & Gratis)</option><option value="gemini-2.5-flash">Gemini 2.5 Flash (Baru/Experimental)</option><option value="gemini-pro">Gemini Pro (Klasik)</option></select></div><button className="w-full bg-green-600 py-3 rounded-xl font-bold text-white hover:bg-green-500">Simpan Konfigurasi</button></form></Modal>
       <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant"><div className="flex flex-col h-[50vh] md:h-[400px]"><div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">{chatHistory.map((msg, index) => (<div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>{msg.image && <img src={msg.image} alt="User Upload" className="w-full rounded-lg mb-2 border border-white/20" />}{msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({node, ...props}) => <span className="font-bold text-yellow-400" {...props} />, a: ({node, ...props}) => <a className="text-blue-400 underline" target="_blank" {...props} />, ul: ({node, ...props}) => <ul className="list-disc ml-4 mt-1" {...props} />, li: ({node, ...props}) => <li className="mb-1" {...props} />, code: ({node, ...props}) => <code className="bg-slate-950 px-1 py-0.5 rounded text-green-400 font-mono text-xs border border-slate-700" {...props} /> }}>{msg.text}</ReactMarkdown>}</div></div>))}{isTyping && <div className="flex justify-start"><div className="bg-slate-800 text-slate-400 px-4 py-2 rounded-2xl text-xs border border-slate-700 flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-75"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-150"></div></div></div>}<div ref={chatEndRef} /></div>{imagePreview && (<div className="px-4 py-2 bg-slate-800 border-t border-slate-700 flex justify-between items-center"><div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-600" /><span className="text-xs text-slate-400">Gambar siap dikirim</span></div><button onClick={clearImage} className="text-red-400 hover:text-red-300"><XCircle size={20}/></button></div>)}<form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-800 pt-3"><button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button><input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" /><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 text-sm" /><button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-3 rounded-xl"><Send size={20} /></button></form></div></Modal>
@@ -307,64 +315,66 @@ function App() {
       <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" /><button className="w-full bg-purple-600 py-3 rounded-xl font-bold text-white">Kirim</button></form></Modal>
       <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-400 text-xs mb-2">Tulis nama dipisahkan dengan koma (Contoh: Budi, Andi, Siti)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32 focus:border-orange-500 focus:outline-none" placeholder="Nama siswa..." /><button className="w-full bg-orange-600 py-3 rounded-xl font-bold text-white hover:bg-orange-500">Simpan Piket</button></form></Modal>
       <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes"><div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-800"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="Kata-kata hari ini..." /><button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium">Tambah Quote</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-500">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-500 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-800/50 rounded-xl border border-slate-800 group"><div><p className="text-sm text-slate-200 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-500">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-600 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button></div>))}</div></div></Modal>
-
-      {/* NEW: MODAL UANG KAS */}
+      
+      {/* NEW: MODAL BUKU KAS (DENGAN FILTER) */}
       <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title="Buku Kas Kelas 💰">
           <div className="space-y-6">
               <div className="bg-gradient-to-r from-green-600 to-emerald-800 p-4 rounded-2xl shadow-lg text-center relative overflow-hidden">
                   <div className="relative z-10"><p className="text-green-100 text-xs font-medium uppercase tracking-wider mb-1">Total Saldo Kas</p><h2 className="text-3xl font-bold text-white">{formatRupiah(totalSaldo)}</h2></div>
                   <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
               </div>
-              {isAdmin ? (
+
+              {/* FILTER BAR */}
+              <div className="flex gap-2 items-center bg-slate-800 p-2 rounded-lg">
+                  <Filter size={16} className="text-slate-400 ml-2"/>
+                  <select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-slate-700 text-white text-xs p-1.5 rounded outline-none border border-slate-600">
+                      {Array.from({length: 12}, (_, i) => i + 1).map(m => <option key={m} value={m}>Bulan {m}</option>)}
+                  </select>
+                  <select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-slate-700 text-white text-xs p-1.5 rounded outline-none border border-slate-600">
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <button onClick={handleExportExcel} className="ml-auto text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded flex items-center gap-1"><FileSpreadsheet size={14}/> Excel</button>
+              </div>
+
+              {/* FORM INPUT (ADMIN) */}
+              {isAdmin && (
                 <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">Input Transaksi</h4>
                     <form onSubmit={handleAddKas} className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
-                            <input type="date" value={kasInput.tanggal} onChange={e => setKasInput({...kasInput, tanggal: e.target.value})} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white" />
-                            <select value={kasInput.tipe} onChange={e => setKasInput({...kasInput, tipe: e.target.value})} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-green-500">
-                                <option value="masuk">Masuk (+)</option>
-                                <option value="keluar">Keluar (-)</option>
-                            </select>
+                            <input type="date" value={kasInput.tanggal} onChange={e => setKasInput({...kasInput, tanggal: e.target.value})} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white" />
+                            <select value={kasInput.tipe} onChange={e => setKasInput({...kasInput, tipe: e.target.value})} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:border-green-500"><option value="masuk">Masuk (+)</option><option value="keluar">Keluar (-)</option></select>
                         </div>
-                        <input type="text" value={kasInput.nama} onChange={e => setKasInput({...kasInput, nama: e.target.value})} placeholder="Nama Siswa / Item" className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-green-500 focus:outline-none" />
-                        {/* INPUT JUMLAH (STRING + FORMAT) */}
-                        <div className="flex gap-3">
-                            <input type="text" value={kasInput.jumlah} onChange={handleJumlahChange} placeholder="Jumlah (Rp)" className="w-1/2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-green-500 focus:outline-none" />
-                            <input type="text" value={kasInput.keterangan} onChange={e => setKasInput({...kasInput, keterangan: e.target.value})} placeholder="Ket. (Opsional)" className="w-1/2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-green-500 focus:outline-none" />
+                        <div className="flex gap-2">
+                            <input type="text" value={kasInput.nama} onChange={e => setKasInput({...kasInput, nama: e.target.value})} placeholder="Nama" className="w-1/3 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none" />
+                            <input type="text" value={kasInput.jumlah} onChange={handleJumlahChange} placeholder="Rp" className="w-1/3 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none" />
+                            <input type="text" value={kasInput.keterangan} onChange={e => setKasInput({...kasInput, keterangan: e.target.value})} placeholder="Ket" className="w-1/3 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none" />
                         </div>
-                        <button className="w-full bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"><Plus size={16}/> Simpan Transaksi</button>
+                        <button className="w-full bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg text-xs font-bold">Simpan</button>
                     </form>
                 </div>
-              ) : (<div className="text-center p-3 bg-slate-800/50 rounded-xl border border-slate-700"><p className="text-xs text-slate-400">Login Admin untuk tambah data kas.</p></div>)}
+              )}
 
-              <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Riwayat Transaksi</h4>
-                      <button onClick={handleExportExcel} className="text-xs text-green-400 flex items-center gap-1 hover:text-green-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700"><FileSpreadsheet size={14}/> Export Excel</button>
-                  </div>
-                  <div className="max-h-[250px] overflow-y-auto custom-scrollbar space-y-2">
-                      {loadingKas ? <p className="text-center text-xs text-slate-500">Loading...</p> : 
-                       dataKas.length === 0 ? <p className="text-center text-xs text-slate-500 italic py-4">Belum ada transaksi.</p> :
-                       dataKas.sort((a,b) => b.createdAt - a.createdAt).map((item) => (
-                          <div key={item.id} className="flex justify-between items-center p-3 bg-slate-800/30 rounded-xl border border-slate-700 hover:bg-slate-800 transition-colors group">
-                              <div className="flex items-center gap-3">
-                                  <div className={`p-2 rounded-full ${item.tipe === 'masuk' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{item.tipe === 'masuk' ? <TrendingUp size={16}/> : <TrendingDown size={16}/>}</div>
-                                  <div><p className="text-sm font-medium text-white">{item.nama}</p><p className="text-[10px] text-slate-500">{item.tanggal} • {item.keterangan}</p></div>
-                              </div>
-                              <div className="text-right">
-                                  <p className={`text-sm font-bold ${item.tipe === 'masuk' ? 'text-green-400' : 'text-red-400'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>
-                                  {isAdmin && <button onClick={() => handleDeleteKas(item.id)} className="text-slate-600 hover:text-red-400 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">Hapus</button>}
-                              </div>
+              {/* HISTORY LIST (FILTERED) */}
+              <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-2">
+                  {filteredKas.length === 0 ? <p className="text-center text-xs text-slate-500 py-4">Tidak ada data di bulan ini.</p> :
+                   filteredKas.map((item) => (
+                      <div key={item.id} className="flex justify-between items-center p-2 bg-slate-800/30 rounded-lg border border-slate-700">
+                          <div className="flex items-center gap-3">
+                              <div className={`p-1.5 rounded-full ${item.tipe === 'masuk' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{item.tipe === 'masuk' ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}</div>
+                              <div><p className="text-xs font-bold text-white">{item.nama}</p><p className="text-[10px] text-slate-500">{item.tanggal} • {item.keterangan}</p></div>
                           </div>
-                       ))
-                      }
-                  </div>
+                          <div className="text-right">
+                              <p className={`text-xs font-bold ${item.tipe === 'masuk' ? 'text-green-400' : 'text-red-400'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>
+                              {isAdmin && <button onClick={() => handleDeleteKas(item.id)} className="text-slate-600 hover:text-red-400 text-[9px]">Hapus</button>}
+                          </div>
+                      </div>
+                   ))
+                  }
               </div>
           </div>
       </Modal>
 
-      {/* NEW: PDF TOOL */}
-      <Modal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} title="PDF Tool"><div className="space-y-4"><div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center"><input type="file" multiple accept="image/*" onChange={handlePdfImageChange} className="hidden" id="pdfInput"/><label htmlFor="pdfInput" className="cursor-pointer flex flex-col items-center gap-2"><ImageIcon size={32} className="text-blue-400"/><span className="text-sm text-slate-300">Klik pilih Foto (Bisa banyak)</span></label></div><div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">{pdfImages.map((img, idx) => (<div key={idx} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg"><span className="text-xs text-slate-300 truncate max-w-[200px]">{img.file.name}</span><button onClick={() => removePdfImage(idx)} className="text-red-400 hover:text-red-300"><XCircle size={16}/></button></div>))}</div><button onClick={handleGeneratePdf} disabled={pdfImages.length === 0} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Download size={18}/> Download PDF</button></div></Modal>
+      <Modal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} title="PDF Tool"><div className="space-y-4"><div className="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center"><input type="file" multiple accept="image/*" onChange={handlePdfImageChange} className="hidden" id="pdfInput"/><label htmlFor="pdfInput" className="cursor-pointer flex flex-col items-center gap-2"><ImageIcon size={32} className="text-blue-400"/><span className="text-sm text-slate-300">Klik pilih Foto</span></label></div><div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">{pdfImages.map((img, idx) => (<div key={idx} className="flex justify-between items-center bg-slate-800 p-2 rounded-lg"><span className="text-xs text-slate-300 truncate max-w-[200px]">{img.file.name}</span><button onClick={() => removePdfImage(idx)} className="text-red-400 hover:text-red-300"><XCircle size={16}/></button></div>))}</div><button onClick={handleGeneratePdf} disabled={pdfImages.length === 0} className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Download size={18}/> Download PDF</button></div></Modal>
 
     </div>
   )
