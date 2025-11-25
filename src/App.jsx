@@ -79,14 +79,14 @@ function App() {
   const [piketInput, setPiketInput] = useState('') 
   const [infoInput, setInfoInput] = useState('')
   
-  // KAS STATES
+  // KAS STATES & FILTER (UPDATED: Mingguan)
   const [kasInput, setKasInput] = useState({ 
       tanggal: new Date().toISOString().split('T')[0], 
       nama: '', jumlah: '', tipe: 'masuk', keterangan: '' 
   })
-  // FILTER KAS
-  const [filterBulan, setFilterBulan] = useState(new Date().getMonth() + 1) // Default bulan ini
-  const [filterTahun, setFilterTahun] = useState(new Date().getFullYear()) // Default tahun ini
+  const [filterBulan, setFilterBulan] = useState(new Date().getMonth() + 1)
+  const [filterTahun, setFilterTahun] = useState(new Date().getFullYear())
+  const [filterMinggu, setFilterMinggu] = useState('all') // NEW: Filter Minggu
 
   // AI & PDF STATES
   const [chatInput, setChatInput] = useState('')
@@ -111,20 +111,28 @@ function App() {
   const piketTampil = dataPiket.find(p => p.id === hariPilihan)
   const activeQuotes = dataQuotes.length > 0 ? dataQuotes : DEFAULT_QUOTES
 
-  // --- LOGIC KAS & FILTER ---
-  // 1. Hitung Total Saldo (Semua Waktu)
+  // --- LOGIC KAS & FILTER MINGGUAN ---
   const totalSaldo = dataKas.reduce((acc, curr) => curr.tipe === 'masuk' ? acc + Number(curr.jumlah) : acc - Number(curr.jumlah), 0)
   const formatRupiah = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n)
 
-  // 2. Filter Data Berdasarkan Bulan & Tahun
+  // Helper: Hitung Minggu ke-berapa dalam bulan itu
+  const getWeekOfMonth = (date) => {
+      const d = new Date(date);
+      const dateNum = d.getDate();
+      return Math.ceil(dateNum / 7);
+  }
+
+  // Filter Data (Bulan + Tahun + Minggu)
   const filteredKas = dataKas.filter(item => {
       if (!item.tanggal) return false;
       const date = new Date(item.tanggal);
-      return (date.getMonth() + 1) === parseInt(filterBulan) && date.getFullYear() === parseInt(filterTahun);
-  }).sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal)); // Urutkan tanggal terbaru
-
-  // 3. Hitung Saldo Bulan Ini (Opsional, buat info aja)
-  const saldoBulanIni = filteredKas.reduce((acc, curr) => curr.tipe === 'masuk' ? acc + Number(curr.jumlah) : acc - Number(curr.jumlah), 0)
+      const isMonthMatch = (date.getMonth() + 1) === parseInt(filterBulan);
+      const isYearMatch = date.getFullYear() === parseInt(filterTahun);
+      // Kalau 'all', lolos. Kalau pilih minggu, cek minggu ke-berapa
+      const isWeekMatch = filterMinggu === 'all' || getWeekOfMonth(date) === parseInt(filterMinggu);
+      
+      return isMonthMatch && isYearMatch && isWeekMatch;
+  }).sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal));
 
   const handleJumlahChange = (e) => {
     let rawValue = e.target.value.replace(/[^0-9]/g, '');
@@ -163,7 +171,7 @@ function App() {
   const handleAddQuote = async (e) => { e.preventDefault(); if (!newQuoteText.trim()) return; try { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText('') } catch (error) { console.error(error) } }
   const handleDeleteQuote = async (id) => { if (confirm("Hapus kata-kata ini?")) { try { await deleteDoc(doc(db, 'quotes', id)) } catch (error) { console.error(error) } } }
   
-  // KAS HANDLERS (SAVE & EXPORT FILTERED)
+  // KAS HANDLERS
   const handleAddKas = async (e) => {
       e.preventDefault();
       if (!kasInput.nama || !kasInput.jumlah) return;
@@ -185,34 +193,28 @@ function App() {
   const handleDeleteKas = async (id) => { if (confirm("Hapus transaksi ini?")) try { await deleteDoc(doc(db, 'uang_kas', id)) } catch (err) {} }
   
   const handleExportExcel = () => {
-      // Export HANYA data yang sudah difilter (Bulan Ini)
       const dataToExport = filteredKas.map(item => ({
           "Tanggal": item.tanggal || '-',
+          "Minggu Ke": getWeekOfMonth(new Date(item.tanggal)), // Tambahan Info Minggu
           "Nama Siswa": item.nama,
           "Jenis": item.tipe === 'masuk' ? 'PEMASUKAN' : 'PENGELUARAN',
           "Jumlah (Rp)": formatRupiah(item.jumlah),
           "Keterangan": item.keterangan
       }));
 
-      // Tambahkan Baris Total di Bawah
-      dataToExport.push({
-          "Tanggal": "TOTAL",
-          "Nama Siswa": "",
-          "Jenis": "",
-          "Jumlah (Rp)": formatRupiah(saldoBulanIni),
-          "Keterangan": "Saldo Bulan Ini"
-      });
+      // Info File
+      let fileName = `Laporan_Kas_${filterBulan}_${filterTahun}`;
+      if (filterMinggu !== 'all') fileName += `_Minggu_${filterMinggu}`;
 
       const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wscols = [{wch: 15}, {wch: 20}, {wch: 15}, {wch: 20}, {wch: 30}];
+      const wscols = [{wch: 12}, {wch: 10}, {wch: 20}, {wch: 15}, {wch: 15}, {wch: 25}];
       ws['!cols'] = wscols;
-
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, `Kas_${filterBulan}_${filterTahun}`);
-      XLSX.writeFile(wb, `Laporan_Kas_Bulan_${filterBulan}_${filterTahun}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, "Laporan Kas");
+      XLSX.writeFile(wb, `${fileName}.xlsx`);
   }
 
-  // AI & PDF
+  // PDF LOGIC
   const handlePdfImageChange = (e) => { if (e.target.files) { const files = Array.from(e.target.files).map(file => ({ file, url: URL.createObjectURL(file) })); setPdfImages(prev => [...prev, ...files]); } }
   const handleGeneratePdf = () => { setPdfImages([]); setIsPdfModalOpen(false); alert("Fitur PDF Placeholder"); } 
   const removePdfImage = (idx) => { const newImg = [...pdfImages]; newImg.splice(idx, 1); setPdfImages(newImg); }
@@ -234,8 +236,9 @@ function App() {
   const handleDeleteTask = async (e, id) => { e.stopPropagation(); if(confirm('Hapus?')) await deleteDoc(doc(db, 'tugas', id)); }
   const handleToggleTask = async (id, status) => { await updateDoc(doc(db, 'tugas', id), { selesai: !status }); }
   const handleSaveSchedule = async (e) => { e.preventDefault(); const mapel = scheduleInput.split(',').map(i=>i.trim()).filter(i=>i!==''); await setDoc(doc(db, 'jadwal', hariPilihan), { mapel, updatedAt: serverTimestamp() }); setIsScheduleModalOpen(false); }
-  const handleSavePiket = async (e) => { e.preventDefault(); const names = piketInput.split(',').map(i=>i.trim()).filter(i=>i!==''); await setDoc(doc(db, 'piket', hariPilihan), { names, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false); }
   const handleSaveInfo = async (e) => { e.preventDefault(); await setDoc(doc(db, 'pengumuman', 'info_utama'), { isi: infoInput, updatedAt: serverTimestamp() }); setIsInfoModalOpen(false); }
+  const handleSavePiket = async (e) => { e.preventDefault(); const piketArray = piketInput.split(',').map(item => item.trim()).filter(item => item !== ''); try { await setDoc(doc(db, 'piket', hariPilihan), { names: piketArray, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false) } catch (err) { console.error(err) } }
+
   const openScheduleModal = () => { setScheduleInput(jadwalTampil ? jadwalTampil.mapel.join(', ') : ''); setIsScheduleModalOpen(true); }
   const openPiketModal = () => { setPiketInput(piketTampil ? piketTampil.names.join(', ') : ''); setIsPiketModalOpen(true); }
   const openInfoModal = () => { const info = dataInfo.find(i=>i.id==='info_utama')||dataInfo[0]; setInfoInput(info?info.isi:''); setIsInfoModalOpen(true); }
@@ -244,14 +247,12 @@ function App() {
 
   return (
     <div className="min-h-screen text-white font-sans pb-20 md:pb-0">
-      {/* HEADER */}
       <div className="pt-6 px-4 pb-2 md:p-8 md:pb-0 max-w-7xl mx-auto">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div className="flex-1 w-full">
             <div className="flex justify-between items-center mb-1">
                 <p className="text-blue-400 font-medium text-xs md:text-base tracking-wide uppercase flex items-center gap-2">
-                    {greeting} 
-                    {isAdmin ? <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-500/50 flex items-center gap-1 cursor-pointer" onClick={handleLogout}><Unlock size={10}/> ADMIN</span> : <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 cursor-pointer" onClick={() => setIsLoginModalOpen(true)}><Lock size={10}/> GUEST</span>}
+                    {greeting} {isAdmin ? <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-0.5 rounded border border-green-500/50 flex items-center gap-1 cursor-pointer" onClick={handleLogout}><Unlock size={10}/> ADMIN</span> : <span className="bg-slate-700 text-slate-400 text-[10px] px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 cursor-pointer" onClick={() => setIsLoginModalOpen(true)}><Lock size={10}/> GUEST</span>}
                 </p>
                 {isAdmin && (<button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-400 p-1.5 rounded-full transition-colors"><Settings size={16}/></button>)}
             </div>
@@ -263,7 +264,6 @@ function App() {
         </header>
       </div>
 
-      {/* GRID LAYOUT */}
       <div className="p-4 md:p-8 pt-4 max-w-7xl mx-auto flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-6">
         <div className="order-1 md:col-span-4 md:order-1"><div className="h-full bg-gradient-to-br from-indigo-900/80 to-slate-900/80 backdrop-blur-md p-5 rounded-3xl border border-indigo-500/30 relative overflow-hidden group shadow-lg"><div className="flex items-center justify-between mb-2 relative z-10"><div className="flex items-center gap-2 bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-500/30"><Megaphone size={14} className="text-indigo-300" /> <span className="text-xs font-bold text-indigo-100 uppercase">Broadcast</span></div>{isAdmin && <button onClick={openInfoModal} className="opacity-60 hover:opacity-100 hover:text-white transition-opacity"><Edit3 size={16} /></button>}</div><div className="relative z-10">{dataInfo.length > 0 ? (<p className="text-indigo-50 text-sm font-medium leading-relaxed whitespace-pre-wrap line-clamp-3 hover:line-clamp-none transition-all cursor-pointer">{dataInfo.find(i => i.id === 'info_utama')?.isi || dataInfo[0]?.isi}</p>) : <div className="text-white/40 italic text-sm">Info kosong.</div>}</div></div></div>
         
@@ -276,29 +276,12 @@ function App() {
            </div>
         </div>
 
-        <div className="order-3 md:col-span-4 md:order-3">
-            <div className="bg-gradient-to-br from-orange-900/40 to-slate-900 p-5 rounded-3xl border border-orange-500/20 relative overflow-hidden group shadow-lg flex flex-col h-full">
-                <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-orange-600/30"><UserCheck size={20} className="text-orange-400" /></div><div><h3 className="font-bold text-white text-sm">Piket</h3><p className="text-[10px] text-slate-400">{hariPilihan}</p></div></div>{isAdmin && !isLibur && (<button onClick={openPiketModal} className="text-orange-400 hover:text-orange-300 bg-slate-800 p-2 rounded-full"><Edit3 size={14} /></button>)}</div>
-                <div className="bg-slate-800/50 p-3 rounded-xl border border-white/5 text-center">{isLibur ? <span className="text-xs text-orange-200">Libur Cuy! ☕</span> : piketTampil ? (<div className="flex flex-wrap gap-2 justify-center">{piketTampil.names.map((nama, idx) => (<span key={idx} className="bg-orange-500/20 text-orange-200 text-xs px-2 py-1 rounded-md border border-orange-500/30">{nama}</span>))}</div>) : <span className="text-xs text-slate-500 italic">Kosong.</span>}</div>
-            </div>
-        </div>
+        <div className="order-3 md:col-span-4 md:order-3"><div className="bg-gradient-to-br from-orange-900/40 to-slate-900 p-5 rounded-3xl border border-orange-500/20 relative overflow-hidden group shadow-lg flex flex-col h-full"><div className="flex items-center justify-between mb-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-orange-600/30"><UserCheck size={20} className="text-orange-400" /></div><div><h3 className="font-bold text-white text-sm">Piket</h3><p className="text-[10px] text-slate-400">{hariPilihan}</p></div></div>{isAdmin && !isLibur && (<button onClick={openPiketModal} className="text-orange-400 hover:text-orange-300 bg-slate-800 p-2 rounded-full"><Edit3 size={14} /></button>)}</div><div className="bg-slate-800/50 p-3 rounded-xl border border-white/5 text-center">{isLibur ? <span className="text-xs text-orange-200">Libur Cuy! ☕</span> : piketTampil ? (<div className="flex flex-wrap gap-2 justify-center">{piketTampil.names.map((nama, idx) => (<span key={idx} className="bg-orange-500/20 text-orange-200 text-xs px-2 py-1 rounded-md border border-orange-500/30">{nama}</span>))}</div>) : <span className="text-xs text-slate-500 italic">Kosong.</span>}</div></div></div>
 
-        {/* ROW 2: UANG KAS | JADWAL */}
-        <div className="order-4 md:col-span-4 md:order-4">
-            <div className="bg-gradient-to-br from-green-900/40 to-slate-900 p-5 rounded-3xl border border-green-500/20 relative overflow-hidden group shadow-lg flex flex-col h-full justify-center cursor-pointer hover:border-green-500/40 transition-all" onClick={() => setIsKasModalOpen(true)}>
-                <div className="flex items-center gap-3 mb-3"><div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center border border-green-600/30"><Wallet size={24} className="text-green-400" /></div><div><h3 className="font-bold text-white">Buku Kas</h3><p className="text-xs text-slate-400">Klik untuk detail</p></div></div>
-                <div className="bg-slate-800/50 p-3 rounded-xl border border-white/5 text-center"><p className="text-2xl font-bold text-green-300 tracking-tight">{formatRupiah(totalSaldo)}</p></div>
-            </div>
-        </div>
+        <div className="order-4 md:col-span-4 md:order-4"><div className="bg-gradient-to-br from-green-900/40 to-slate-900 p-5 rounded-3xl border border-green-500/20 relative overflow-hidden group shadow-lg flex flex-col h-full justify-center cursor-pointer hover:border-green-500/40 transition-all" onClick={() => setIsKasModalOpen(true)}><div className="flex items-center gap-3 mb-3"><div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center border border-green-600/30"><Wallet size={24} className="text-green-400" /></div><div><h3 className="font-bold text-white">Buku Kas</h3><p className="text-xs text-slate-400">Klik untuk detail</p></div></div><div className="bg-slate-800/50 p-3 rounded-xl border border-white/5 text-center"><p className="text-2xl font-bold text-green-300 tracking-tight">{formatRupiah(totalSaldo)}</p></div></div></div>
 
-        <div className="order-5 md:col-span-8 md:order-5">
-            <div className="bg-slate-900/60 backdrop-blur-md p-5 rounded-3xl border border-slate-700/50 shadow-xl h-full flex flex-col">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-blue-500/10 rounded-lg"><BookOpen size={20} className="text-blue-400" /></div><div><h2 className="font-bold text-lg text-white">Jadwal</h2><p className="text-[10px] text-slate-500 uppercase tracking-wider">{hariPilihan}</p></div></div><div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map((hari) => (<button key={hari} onClick={() => {setHariPilihan(hari)}} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap ${hariPilihan === hari ? 'bg-blue-600 border-blue-500 text-white' : 'bg-transparent border-slate-700 text-slate-400'}`}>{hari}</button>))}{isAdmin && !isLibur && <button onClick={openScheduleModal} className="px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700 text-slate-400"><Edit3 size={14} /></button>}</div></div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">{isLibur ? <div className="col-span-full py-8 text-center text-slate-500 border-2 border-dashed border-slate-800 rounded-xl"><Coffee size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Libur.</p></div> : loadingJadwal ? <p className="text-slate-500 text-xs">Loading...</p> : jadwalTampil ? (jadwalTampil.mapel.map((mapel, index) => (<div key={index} className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-lg flex items-center gap-2"><span className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center text-[10px] font-bold text-slate-500">{index + 1}</span><span className="font-medium text-slate-300 text-sm truncate">{mapel}</span></div>))) : <div className="col-span-full py-4 text-center text-slate-500 text-sm border-2 border-dashed border-slate-800 rounded-xl">Jadwal Kosong.</div>}</div>
-            </div>
-        </div>
+        <div className="order-5 md:col-span-8 md:order-5"><div className="bg-slate-900/60 backdrop-blur-md p-5 rounded-3xl border border-slate-700/50 shadow-xl h-full flex flex-col"><div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-blue-500/10 rounded-lg"><BookOpen size={20} className="text-blue-400" /></div><div><h2 className="font-bold text-lg text-white">Jadwal</h2><p className="text-[10px] text-slate-500 uppercase tracking-wider">{hariPilihan}</p></div></div><div className="w-full md:w-auto flex gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map((hari) => (<button key={hari} onClick={() => {setHariPilihan(hari)}} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap ${hariPilihan === hari ? 'bg-blue-600 border-blue-500 text-white' : 'bg-transparent border-slate-700 text-slate-400'}`}>{hari}</button>))}{isAdmin && !isLibur && <button onClick={openScheduleModal} className="px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700 text-slate-400"><Edit3 size={14} /></button>}</div></div><div className="grid grid-cols-2 md:grid-cols-4 gap-2">{isLibur ? <div className="col-span-full py-8 text-center text-slate-500 border-2 border-dashed border-slate-800 rounded-xl"><Coffee size={32} className="mx-auto mb-2 opacity-50"/><p className="text-xs">Libur.</p></div> : loadingJadwal ? <p className="text-slate-500 text-xs">Loading...</p> : jadwalTampil ? (jadwalTampil.mapel.map((mapel, index) => (<div key={index} className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-lg flex items-center gap-2"><span className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center text-[10px] font-bold text-slate-500">{index + 1}</span><span className="font-medium text-slate-300 text-sm truncate">{mapel}</span></div>))) : <div className="col-span-full py-4 text-center text-slate-500 text-sm border-2 border-dashed border-slate-800 rounded-xl">Jadwal Kosong.</div>}</div></div></div>
         
-        {/* ROW 3: QUOTE | TUGAS */}
         <div className="order-6 md:col-span-4 md:order-6"><div className="h-full bg-slate-900/60 backdrop-blur-md p-4 rounded-3xl border border-slate-700/50 flex flex-col justify-center text-center relative overflow-hidden min-h-[100px]">{isAdmin && (<button onClick={() => setIsQuoteModalOpen(true)} className="absolute top-3 right-3 text-slate-500 hover:text-blue-400 p-1 bg-slate-800/50 rounded-full z-10"><Edit3 size={12} /></button>)}<AnimatePresence mode="wait"><motion.div key={quote.text} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.5 }} className="flex flex-col items-center px-2"><Quote size={20} className="text-blue-500/30 mb-1"/><p className="text-slate-300 italic font-serif text-sm leading-relaxed">"{quote.text}"</p><p className="text-slate-500 text-[10px] mt-2 font-bold uppercase tracking-widest">— {quote.author}</p></motion.div></AnimatePresence></div></div>
         
         <div className="order-7 md:col-span-8 md:order-7"><div className="bg-slate-900/60 backdrop-blur-md p-5 rounded-3xl border border-slate-700/50 shadow-xl min-h-[300px]"><div className="flex items-center justify-between mb-4"><div className="flex items-center gap-3"><div className="bg-green-500/10 p-2 rounded-lg text-green-400"><CheckSquare size={20} /></div><h2 className="font-bold text-lg">Tugas <span className="text-slate-500 text-sm font-normal">({daftarTugas.filter(t => !t.selesai).length})</span></h2></div>{isAdmin && <button onClick={() => setIsTaskModalOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-xl font-bold text-xs shadow-lg flex items-center gap-1"><Plus size={14} /> Baru</button>}</div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">{!loadingTugas && daftarTugas.length === 0 && <div className="col-span-full text-center text-slate-500 py-8 text-sm">Tugas Bersih! ✨</div>}{daftarTugas.map((tugas) => (<div key={tugas.id} onClick={() => isAdmin && handleToggleTask(tugas.id, tugas.selesai)} className={`relative p-4 rounded-2xl border transition-all cursor-pointer group hover:-translate-y-1 hover:shadow-lg ${tugas.selesai ? 'bg-slate-900/30 border-slate-800 opacity-50' : 'bg-slate-800/40 border-slate-700 hover:border-blue-500/50'} ${!isAdmin ? 'cursor-default hover:translate-y-0' : ''}`}><div className="flex justify-between items-start"><div className="flex-1 min-w-0 pr-2"><h3 className={`font-semibold text-sm mb-1 truncate ${tugas.selesai ? 'line-through text-slate-500' : 'text-white'}`}>{tugas.judul}</h3><div className="inline-block px-2 py-0.5 rounded-md bg-slate-900 text-[10px] text-slate-400 border border-slate-800">{tugas.mapel}</div></div><div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${tugas.selesai ? 'bg-green-500 border-green-500' : 'border-slate-600'}`}>{tugas.selesai && <CheckSquare size={10} className="text-white" />}</div></div>{isAdmin && <button onClick={(e) => handleDeleteTask(e, tugas.id)} className="absolute bottom-3 right-3 text-slate-500 hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/50 p-1 rounded-full"><Trash2 size={14} /></button>}</div>))}</div></div></div>
@@ -306,7 +289,7 @@ function App() {
         <footer className="order-last md:col-span-12 text-center text-slate-600 text-[10px] mt-4 mb-8 font-medium"><p>Class Dashboard XI TKJ • Developed by <a href="https://rafiantara.fun" target="_blank" className="text-blue-500 hover:text-blue-400 hover:underline">Rafiantara</a></p></footer>
       </div>
 
-      {/* MODALS (Login, Settings, AI, dll TETAP SAMA) */}
+      {/* MODALS */}
       <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Access"><form onSubmit={handleLogin} className="space-y-4 pt-2"><div className="text-center mb-4"><div className="bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3"><Lock size={32} className="text-slate-400"/></div><p className="text-sm text-slate-400">Masukkan PIN rahasia.</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white tracking-[5px] text-xl focus:outline-none focus:border-blue-500" placeholder="••••" autoFocus maxLength={6}/><button className="w-full bg-blue-600 py-3 rounded-xl font-bold text-white hover:bg-blue-500 transition-colors">Buka Gembok</button></form></Modal>
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="AI Configuration"><form onSubmit={handleSaveSettings} className="space-y-4"><div className="bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20 mb-4"><p className="text-xs text-yellow-400 flex items-center gap-2"><Key size={14}/> <b>PENTING:</b> Masukkan API Key Gemini baru di sini jika Chatbot error/limit.</p></div><div><label className="block text-xs text-slate-400 mb-1">Gemini API Key</label><input type="text" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white focus:border-green-500 focus:outline-none text-sm" placeholder="Paste key disini..." /></div><div><label className="block text-xs text-slate-400 mb-1">Model AI</label><select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white focus:border-green-500 focus:outline-none text-sm"><option value="gemini-1.5-flash">Gemini 1.5 Flash (Stabil & Gratis)</option><option value="gemini-2.5-flash">Gemini 2.5 Flash (Baru/Experimental)</option><option value="gemini-pro">Gemini Pro (Klasik)</option></select></div><button className="w-full bg-green-600 py-3 rounded-xl font-bold text-white hover:bg-green-500">Simpan Konfigurasi</button></form></Modal>
       <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant"><div className="flex flex-col h-[50vh] md:h-[400px]"><div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">{chatHistory.map((msg, index) => (<div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}`}>{msg.image && <img src={msg.image} alt="User Upload" className="w-full rounded-lg mb-2 border border-white/20" />}{msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({node, ...props}) => <span className="font-bold text-yellow-400" {...props} />, a: ({node, ...props}) => <a className="text-blue-400 underline" target="_blank" {...props} />, ul: ({node, ...props}) => <ul className="list-disc ml-4 mt-1" {...props} />, li: ({node, ...props}) => <li className="mb-1" {...props} />, code: ({node, ...props}) => <code className="bg-slate-950 px-1 py-0.5 rounded text-green-400 font-mono text-xs border border-slate-700" {...props} /> }}>{msg.text}</ReactMarkdown>}</div></div>))}{isTyping && <div className="flex justify-start"><div className="bg-slate-800 text-slate-400 px-4 py-2 rounded-2xl text-xs border border-slate-700 flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-75"></div><div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-150"></div></div></div>}<div ref={chatEndRef} /></div>{imagePreview && (<div className="px-4 py-2 bg-slate-800 border-t border-slate-700 flex justify-between items-center"><div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-600" /><span className="text-xs text-slate-400">Gambar siap dikirim</span></div><button onClick={clearImage} className="text-red-400 hover:text-red-300"><XCircle size={20}/></button></div>)}<form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-800 pt-3"><button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-800 hover:bg-slate-700 text-slate-300 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button><input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" /><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 text-sm" /><button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-3 rounded-xl"><Send size={20} /></button></form></div></Modal>
@@ -315,8 +298,8 @@ function App() {
       <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32" /><button className="w-full bg-purple-600 py-3 rounded-xl font-bold text-white">Kirim</button></form></Modal>
       <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-400 text-xs mb-2">Tulis nama dipisahkan dengan koma (Contoh: Budi, Andi, Siti)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white h-32 focus:border-orange-500 focus:outline-none" placeholder="Nama siswa..." /><button className="w-full bg-orange-600 py-3 rounded-xl font-bold text-white hover:bg-orange-500">Simpan Piket</button></form></Modal>
       <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes"><div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-800"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-slate-800 border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="Kata-kata hari ini..." /><button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium">Tambah Quote</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-500">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-500 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-800/50 rounded-xl border border-slate-800 group"><div><p className="text-sm text-slate-200 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-500">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-600 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button></div>))}</div></div></Modal>
-      
-      {/* NEW: MODAL BUKU KAS (DENGAN FILTER) */}
+
+      {/* MODAL BUKU KAS (DENGAN FILTER MINGGUAN) */}
       <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title="Buku Kas Kelas 💰">
           <div className="space-y-6">
               <div className="bg-gradient-to-r from-green-600 to-emerald-800 p-4 rounded-2xl shadow-lg text-center relative overflow-hidden">
@@ -324,19 +307,23 @@ function App() {
                   <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
               </div>
 
-              {/* FILTER BAR */}
+              {/* FILTER BAR (MINGGU ADDED) */}
               <div className="flex gap-2 items-center bg-slate-800 p-2 rounded-lg">
                   <Filter size={16} className="text-slate-400 ml-2"/>
-                  <select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-slate-700 text-white text-xs p-1.5 rounded outline-none border border-slate-600">
-                      {Array.from({length: 12}, (_, i) => i + 1).map(m => <option key={m} value={m}>Bulan {m}</option>)}
+                  <select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-slate-700 text-white text-[10px] p-1.5 rounded outline-none border border-slate-600 flex-1">
+                      {Array.from({length: 12}, (_, i) => i + 1).map(m => <option key={m} value={m}>Bln {m}</option>)}
                   </select>
-                  <select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-slate-700 text-white text-xs p-1.5 rounded outline-none border border-slate-600">
+                  <select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-slate-700 text-white text-[10px] p-1.5 rounded outline-none border border-slate-600 flex-1">
                       {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                   </select>
-                  <button onClick={handleExportExcel} className="ml-auto text-xs bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded flex items-center gap-1"><FileSpreadsheet size={14}/> Excel</button>
+                  {/* DROPDOWN MINGGU BARU */}
+                  <select value={filterMinggu} onChange={(e) => setFilterMinggu(e.target.value)} className="bg-slate-700 text-white text-[10px] p-1.5 rounded outline-none border border-slate-600 flex-1">
+                      <option value="all">Semua</option>
+                      {[1,2,3,4,5].map(w => <option key={w} value={w}>Mgg {w}</option>)}
+                  </select>
+                  <button onClick={handleExportExcel} className="ml-auto text-[10px] bg-green-600 hover:bg-green-500 text-white px-2 py-1.5 rounded flex items-center gap-1"><FileSpreadsheet size={12}/> XLS</button>
               </div>
 
-              {/* FORM INPUT (ADMIN) */}
               {isAdmin && (
                 <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
                     <form onSubmit={handleAddKas} className="space-y-3">
@@ -354,14 +341,13 @@ function App() {
                 </div>
               )}
 
-              {/* HISTORY LIST (FILTERED) */}
               <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-2">
-                  {filteredKas.length === 0 ? <p className="text-center text-xs text-slate-500 py-4">Tidak ada data di bulan ini.</p> :
+                  {filteredKas.length === 0 ? <p className="text-center text-xs text-slate-500 py-4">Tidak ada data di periode ini.</p> :
                    filteredKas.map((item) => (
                       <div key={item.id} className="flex justify-between items-center p-2 bg-slate-800/30 rounded-lg border border-slate-700">
                           <div className="flex items-center gap-3">
                               <div className={`p-1.5 rounded-full ${item.tipe === 'masuk' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{item.tipe === 'masuk' ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}</div>
-                              <div><p className="text-xs font-bold text-white">{item.nama}</p><p className="text-[10px] text-slate-500">{item.tanggal} • {item.keterangan}</p></div>
+                              <div><p className="text-xs font-bold text-white">{item.nama}</p><p className="text-[10px] text-slate-500">{item.tanggal} (Mgg {getWeekOfMonth(new Date(item.tanggal))})</p></div>
                           </div>
                           <div className="text-right">
                               <p className={`text-xs font-bold ${item.tipe === 'masuk' ? 'text-green-400' : 'text-red-400'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>
