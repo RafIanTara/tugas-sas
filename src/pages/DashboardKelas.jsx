@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import logoSekolah from '../assets/images/logosmk.png'
-// IMPORT LOGO TKJ
 import logoJurusan from '../assets/images/logotkj.jpg'
 
-// HAPUS import 'Image', ganti jadi 'ImageIcon' biar ga bentrok
+// HAPUS import 'Image', ganti jadi 'ImageIcon' biar ga bentrok dengan window.Image
 import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter, UserMinus, CheckCircle, AlertCircle, Home, Eye, Users, Moon, Sun, Newspaper, UploadCloud } from 'lucide-react'
 import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc, increment } from "firebase/firestore"
 import { db } from "../services/firebase"
@@ -108,7 +107,9 @@ function DashboardKelas({ kelasId }) {
     const [filterBulan, setFilterBulan] = useState(new Date().getMonth() + 1)
     const [filterTahun, setFilterTahun] = useState(new Date().getFullYear())
 
+    // AI CHAT STATE
     const [chatInput, setChatInput] = useState('')
+    // GREETING GAUL
     const [chatHistory, setChatHistory] = useState([{ role: 'model', text: 'Assalamualaikum Wak! Gue Asisten AI TKJ nih. Ada yang bisa gue bantu? Spill aja!' }])
     const [isTyping, setIsTyping] = useState(false)
     const [imageFile, setImageFile] = useState(null)
@@ -143,13 +144,13 @@ function DashboardKelas({ kelasId }) {
     const handleJumlahChange = (e) => { let r = e.target.value.replace(/[^0-9]/g, ''); setKasInput({ ...kasInput, jumlah: r ? parseInt(r).toLocaleString('id-ID') : '' }); }
     const clearBukti = () => { setBuktiFile(null); setBuktiPreview(null); if (buktiInputRef.current) buktiInputRef.current.value = ''; }
     
-    // --- FIX: PAKE window.Image() ---
+    // --- FIX: PAKE window.Image() AGAR TIDAK BENTROK DENGAN ICON ---
     const compressImage = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
-                const img = new window.Image(); 
+                const img = new window.Image(); // <-- INI KUNCINYA
                 img.src = event.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
@@ -229,7 +230,14 @@ function DashboardKelas({ kelasId }) {
 
     useEffect(() => { const loadConfig = async () => { try { const aiSnap = await getDoc(doc(db, 'settings', 'ai_config')); if (aiSnap.exists() && aiSnap.data().model) setSelectedModel(aiSnap.data().model); const kasSnap = await getDoc(doc(db, 'settings', `${dbPrefix}kas_config`)); if (kasSnap.exists()) { setSaldoAwal(kasSnap.data().saldoAwal || 0); setNominalKas(kasSnap.data().nominal || 2000); } } catch (e) { } }; loadConfig(); const s = localStorage.getItem('tkj_admin_auth'); if (s === 'true') setIsAdmin(true); window.addEventListener('online', () => setIsOnline(true)); window.addEventListener('offline', () => setIsOnline(false)); const ci = setInterval(() => { const now = new Date(); setTime(now); }, 1000); return () => clearInterval(ci); }, [dbPrefix])
     useEffect(() => { const qi = setInterval(() => { setQuote(p => { if (activeQuotes.length <= 1) return activeQuotes[0]; let r; do { r = Math.floor(Math.random() * activeQuotes.length) } while (activeQuotes[r].text === p.text); return activeQuotes[r]; }) }, 6000); return () => clearInterval(qi) }, [activeQuotes])
-    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [chatHistory, isAiModalOpen, imagePreview])
+    
+    // SCROLL CHAT EFFECT (SAFE)
+    useEffect(() => { 
+        if (isAiModalOpen && chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: "smooth" }) 
+        }
+    }, [chatHistory, isAiModalOpen, imagePreview])
+
     useEffect(() => { const c = async () => { try { const t = new Date().toDateString(); const r = doc(db, `${dbPrefix}absensi`, 'harian'); const s = await getDoc(r); if(s.exists()){ const d=s.data(); if(d.lastUpdated?.toDate().toDateString() !== t){ await setDoc(doc(db, `${dbPrefix}absensi_history`, d.lastUpdated.toDate().toISOString().split('T')[0]), {...d, archivedAt: serverTimestamp()}); await updateDoc(r, {sakit:'-',izin:'-',alpha:'-',lastUpdated:serverTimestamp()}); window.location.reload();}} else { await setDoc(r, {sakit:'-',izin:'-',alpha:'-',lastUpdated:serverTimestamp()}); } } catch(e){} }; c(); }, [dbPrefix]);
 
     const handleLogin = (e) => { e.preventDefault(); if (pinInput === 'tkj123') { setIsAdmin(true); localStorage.setItem('tkj_admin_auth', 'true'); setIsLoginModalOpen(false); setPinInput(''); triggerToast("Login Admin Berhasil!"); } else { triggerToast("PIN Salah!", "error"); setPinInput('') } }
@@ -256,7 +264,47 @@ function DashboardKelas({ kelasId }) {
     const openInfoModal = () => { const i = dataInfo.find(x => x.id === 'info_utama') || dataInfo[0]; setInfoInput(i ? i.isi : ''); setIsInfoModalOpen(true); }
     
     async function fileToGenerativePart(file) { const r = new FileReader(); const p = new Promise(res => r.onloadend = () => res(r.result.split(',')[1])); r.readAsDataURL(file); return { inlineData: { data: await p, mimeType: file.type } }; }
-    const handleSendChat = async (e) => { e.preventDefault(); if (!chatInput.trim() && !imageFile) return; const msg = { role: 'user', text: chatInput, image: imagePreview }; setChatHistory(p => [...p, msg]); setChatInput(''); setImageFile(null); setImagePreview(null); setIsTyping(true); try { const s = await getDoc(doc(db, 'settings', 'ai_config')); if (!s.exists()) throw new Error("API Key belum diset"); const genAI = new GoogleGenerativeAI(s.data().apiKey); const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' }); const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n'); const prompt = `Role: "TKJ Assistant", AI asisten SMK TKJ.\nStyle: Gaul tapi SOPAN. NO SARA/PORNO/JUDI.\nContext:\n${ctx}\nUser: "${msg.text}"`; const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt); setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]); } catch (e) { setChatHistory(p => [...p, { role: 'model', text: `Error: ${e.message}` }]); } finally { setIsTyping(false); } }
+    
+    // --- AI CHAT HANDLER (GAUL TAPI SOPAN) ---
+    const handleSendChat = async (e) => {
+        e.preventDefault()
+        if (!chatInput.trim() && !imageFile) return
+        const currentImageFile = imageFile; const currentImagePreview = imagePreview; const currentText = chatInput;
+        const userMessage = { role: 'user', text: currentText, image: currentImagePreview }
+        setChatHistory(prev => [...prev, userMessage])
+        setChatInput(''); setImageFile(null); setImagePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setIsTyping(true)
+        try {
+            const s = await getDoc(doc(db, 'settings', 'ai_config'));
+            if (!s.exists()) throw new Error("API Key belum diset");
+            const genAI = new GoogleGenerativeAI(s.data().apiKey);
+            const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' });
+            
+            const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n');
+            
+            // PROMPT GAUL TAPI SOPAN (ANTI-BOKEH/JUDI)
+            const prompt = `
+Role: Lo itu "TKJ Assistant", AI asisten buat anak SMK Jurusan TKJ.
+Style:
+1. Bahasa santai, akrab, pake "Gue", "Lo", "Wak", "Bro". Jangan kaku.
+2. TAPI INGAT: Ini lingkungan SEKOLAH. Jaga bahasa.
+3. HARAM/DILARANG KERAS bahas: Porno, Judi (Slot/Judol), Kata Kasar, atau istilah ambigu kayak "Bokeh", "VCS", dll.
+4. Kalau mau kasih contoh download, pake contoh aman: "Download ISO Linux", "Download Game", atau "Download Modul".
+5. Fokus bantu soal Jaringan, Mikrotik, Cisco, Koding, dan Hardware.
+
+Context Obrolan:
+${ctx}
+
+User nanya: "${currentText}"
+Jawab yang asik, solutif, tapi tetap aman buat sekolah ya Wak!
+            `;
+            
+            const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt);
+            setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]);
+        } catch (e) { setChatHistory(p => [...p, { role: 'model', text: `Waduh error Wak: ${e.message}` }]); } finally { setIsTyping(false); }
+    }
+
     const handlePdfImageChange = (e) => { if (e.target.files) setPdfImages(p => [...p, ...Array.from(e.target.files).map(f => ({ file: f, url: URL.createObjectURL(f) }))]) }
     const handleGeneratePdf = () => { setPdfImages([]); setIsPdfModalOpen(false); triggerToast("PDF Dibuat!"); }
     const removePdfImage = (i) => { const n = [...pdfImages]; n.splice(i, 1); setPdfImages(n); }
@@ -271,10 +319,7 @@ function DashboardKelas({ kelasId }) {
             <div className="bg-[#002f6c] dark:bg-[#0f172a]/80 backdrop-blur-md text-white shadow-md sticky top-0 z-40 border-b-4 border-[#00994d] dark:border-blue-600 transition-colors">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
                     <div className="flex items-center gap-4">
-                        {/* GANTI LOGO HEADER DASHBOARD JADI LOGO TKJ */}
-                        <div className="hidden md:block h-16 w-auto p-1 transition-transform hover:scale-105 duration-300 bg-white/10 rounded-lg backdrop-blur-sm">
-                            <img src={logoJurusan} alt="Logo TKJ" className="h-full w-full object-cover rounded-lg" />
-                        </div>
+                        <div className="hidden md:block h-16 w-auto p-1 transition-transform hover:scale-105 duration-300 bg-white/10 rounded-lg backdrop-blur-sm"><img src={logoJurusan} alt="Logo" className="h-full w-full object-cover rounded-lg" /></div>
                         <div><h1 className="text-xl md:text-2xl font-extrabold tracking-wider uppercase leading-none">{kelasId} TKJ <span className="text-[#00994d] dark:text-blue-400">DASHBOARD</span></h1><p className="text-[11px] text-blue-200 opacity-90 hidden md:block font-light tracking-wide mt-1">Sistem Informasi Manajemen Kelas Digital</p></div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -310,6 +355,7 @@ function DashboardKelas({ kelasId }) {
                     </div>
                 </div>
 
+                {/* SIDEBAR (DITAMBAH MENU MADING/BERITA) */}
                 <div className="md:col-span-4 space-y-6">
                     <div className="bg-white dark:bg-slate-800 p-0 rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-xl transition-all group border-t-4 border-[#00994d] dark:border-green-500" onClick={() => setIsKasModalOpen(true)}>
                         <div className="p-5 relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={60} className="text-[#00994d] dark:text-green-400" /></div><div className="flex justify-between items-center mb-3 relative z-10"><h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide flex items-center gap-2"><Wallet size={16} className="text-[#00994d] dark:text-green-400" /> Keuangan {kelasId}</h3><div className="bg-green-50 dark:bg-green-900/30 p-1.5 rounded-full text-[#00994d] dark:text-green-400"><Plus size={14} /></div></div><p className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tighter">{formatRupiah(totalSaldoAkhir)}</p><p className="text-[10px] text-slate-400 mt-1 font-medium">Saldo Terkini • Klik untuk detail</p></div><div className="bg-green-50 dark:bg-slate-700 px-5 py-2 text-[10px] text-green-700 dark:text-green-400 font-bold text-right border-t border-green-100 dark:border-slate-600 group-hover:bg-[#00994d] group-hover:text-white transition-colors">Lihat Laporan &rarr;</div>
@@ -400,6 +446,49 @@ function DashboardKelas({ kelasId }) {
             <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast Info"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-emerald-500" /><button className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700">Kirim</button></form></Modal>
             <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-500 text-xs mb-2">Pisahkan koma (Cth: Budi, Andi)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-orange-500" placeholder="Nama siswa..." /><button className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600">Simpan Piket</button></form></Modal>
             <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes"><div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-100"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-white border-slate-300 rounded-lg p-2.5 text-slate-800 text-sm focus:border-blue-500 outline-none" placeholder="Kata mutiara..." /><button className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Tambah</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-400">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-400 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group"><div><p className="text-sm text-slate-700 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-400">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div></Modal>
+            <Modal isOpen={isAbsenModalOpen} onClose={() => setIsAbsenModalOpen(false)} title="Data Absensi">
+                <div className="space-y-4">
+                    <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
+                        <button onClick={() => setAbsenTab('view')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'view' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Eye size={14}/> Lihat Data</button>
+                        {isAdmin && (<button onClick={() => setAbsenTab('input')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'input' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Edit3 size={14}/> Input Absensi</button>)}
+                    </div>
+                    {absenTab === 'view' && (
+                        <div className="space-y-4 animate-in fade-in">
+                             <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-center border border-red-100 dark:border-red-800 mb-4">
+                                <p className="text-red-800 dark:text-red-300 text-xs font-bold uppercase tracking-wider">Total Siswa Tidak Hadir</p>
+                                <h2 className="text-3xl font-black text-red-600 dark:text-red-400">{countSakit + countIzin + countAlpha}</h2>
+                                <p className="text-[10px] text-red-400 font-medium">Hari Ini</p>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-yellow-200 dark:border-yellow-900/50 shadow-sm">
+                                    <h4 className="text-xs font-bold text-yellow-700 dark:text-yellow-400 flex items-center gap-2 mb-2"><AlertCircle size={14}/> Sakit ({countSakit})</h4>
+                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.sakit === '-' || !absenHariIni.sakit ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.sakit}</p>
+                                </div>
+                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-blue-200 dark:border-blue-900/50 shadow-sm">
+                                    <h4 className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-2 mb-2"><AlertCircle size={14}/> Izin ({countIzin})</h4>
+                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.izin === '-' || !absenHariIni.izin ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.izin}</p>
+                                </div>
+                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-red-200 dark:border-red-900/50 shadow-sm">
+                                    <h4 className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-2 mb-2"><AlertCircle size={14}/> Alpha ({countAlpha})</h4>
+                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.alpha === '-' || !absenHariIni.alpha ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.alpha}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {absenTab === 'input' && isAdmin && (
+                        <form onSubmit={handleSaveAbsensi} className="space-y-4 animate-in fade-in">
+                            <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-lg border border-slate-200 dark:border-slate-600 text-[11px] text-slate-500 dark:text-slate-300 mb-2 flex items-start gap-2">
+                                <AlertCircle size={14} className="shrink-0 mt-0.5 text-blue-500"/>
+                                <p>Pisahkan nama dengan koma (cth: Budi, Andi). Kosongkan atau isi (-) jika nihil.</p>
+                            </div>
+                            <div><label className="block text-xs font-bold text-yellow-600 mb-1">Sakit</label><textarea value={absenInput.sakit} onChange={e => setAbsenInput({ ...absenInput, sakit: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
+                            <div><label className="block text-xs font-bold text-blue-600 mb-1">Izin</label><textarea value={absenInput.izin} onChange={e => setAbsenInput({ ...absenInput, izin: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
+                            <div><label className="block text-xs font-bold text-red-600 mb-1">Alpha</label><textarea value={absenInput.alpha} onChange={e => setAbsenInput({ ...absenInput, alpha: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
+                            <button className="w-full bg-red-600 text-white py-3 rounded-lg font-bold text-sm hover:bg-red-700">Update Data Absensi</button>
+                        </form>
+                    )}
+                </div>
+            </Modal>
             <Modal isOpen={isGaleriModalOpen} onClose={() => setIsGaleriModalOpen(false)} title="Upload Galeri">
                 {isAdmin ? (
                     <form onSubmit={handlePostGaleri} className="space-y-4 animate-in fade-in">
@@ -425,6 +514,34 @@ function DashboardKelas({ kelasId }) {
                         <button onClick={() => {setIsGaleriModalOpen(false); setIsLoginModalOpen(true);}} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Login Disini</button>
                     </div>
                 )}
+            </Modal>
+            <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant">
+                <div className="flex flex-col h-[50vh] md:h-[400px]">
+                    <div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">
+                        {chatHistory.map((msg, index) => (
+                            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] p-3 rounded-lg text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#002f6c] text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none'}`}>
+                                    {msg.image && <img src={msg.image} alt="Upload" className="w-full rounded-lg mb-2 border border-white/20" />}
+                                    {msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({ node, ...props }) => <span className="font-bold text-blue-600" {...props} />, a: ({ node, ...props }) => <a className="text-blue-500 underline" target="_blank" {...props} />, code: ({ node, ...props }) => <code className="bg-slate-200 px-1 py-0.5 rounded text-red-500 font-mono text-xs" {...props} /> }}>{msg.text}</ReactMarkdown>}
+                                </div>
+                            </div>
+                        ))}
+                        {isTyping && <div className="flex justify-start"><div className="bg-slate-100 text-slate-500 px-4 py-2 rounded-lg text-xs border border-slate-200 animate-pulse">Mengetik...</div></div>}
+                        <div ref={chatEndRef} />
+                    </div>
+                    {imagePreview && (
+                        <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                            <div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-300" /><span className="text-xs text-slate-500">Gambar siap dikirim</span></div>
+                            <button onClick={clearImage} className="text-red-500 hover:bg-red-50 rounded-full p-1"><XCircle size={20} /></button>
+                        </div>
+                    )}
+                    <form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-100 pt-3">
+                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-100 hover:bg-slate-200 text-slate-500 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                        <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 focus:outline-none focus:border-emerald-500 text-sm" />
+                        <button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white p-3 rounded-xl shadow-md"><Send size={20} /></button>
+                    </form>
+                </div>
             </Modal>
         </div>
     )
