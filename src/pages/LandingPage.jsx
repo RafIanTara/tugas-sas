@@ -88,6 +88,16 @@ export default function LandingPage() {
         )}
       </nav>
 
+      {/* --- RUNNING TEXT --- */}
+      <div className="bg-yellow-400 text-[#002f6c] border-b-2 border-yellow-500 relative z-40 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center">
+            <span className="bg-[#002f6c] text-white text-[10px] font-bold px-2 py-0.5 rounded mr-3 shrink-0 uppercase tracking-wider animate-pulse">Info Terbaru</span>
+            <marquee behavior="scroll" direction="left" scrollamount="6" className="text-xs md:text-sm font-bold font-mono w-full">
+                📢 Selamat Datang di Portal Resmi Teknik Komputer & Jaringan SMK Muhammadiyah 1 Metro  —  🎓 Pendaftaran Siswa Baru Gelombang 1 Telah Dibuka  —  📞 Hubungi Humas untuk Info Lebih Lanjut  —  🏆 TKJ: Terampil, Kreatif, Juara!
+            </marquee>
+        </div>
+      </div>
+
       {/* --- HERO SECTION --- */}
       <header className="relative bg-gradient-to-br from-[#002f6c] to-[#001a3d] text-white overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
