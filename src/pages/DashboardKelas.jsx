@@ -562,6 +562,98 @@ function DashboardKelas({ kelasId }) {
                     )}
                 </div>
             </Modal>
+            <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="AI Assistant TKJ">
+                <div className="flex flex-col h-[60vh] md:h-[500px]">
+                    {/* Area Chat History */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg mb-3 border border-slate-200 dark:border-slate-700">
+                        {chatHistory.map((chat, index) => (
+                            <div key={index} className={`flex ${chat.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded-2xl p-3 text-xs md:text-sm shadow-sm ${
+                                    chat.role === 'user' 
+                                    ? 'bg-[#002f6c] text-white rounded-br-none' 
+                                    : 'bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none'
+                                }`}>
+                                    {/* Jika ada gambar yang diupload user */}
+                                    {chat.image && (
+                                        <img src={chat.image} alt="User upload" className="max-w-full h-auto rounded-lg mb-2 border border-white/20" />
+                                    )}
+                                    
+                                    {/* Text / Markdown Rendering */}
+                                    {chat.role === 'model' ? (
+                                        <div className="prose dark:prose-invert prose-xs max-w-none">
+                                            <ReactMarkdown>{chat.text}</ReactMarkdown>
+                                        </div>
+                                    ) : (
+                                        <p>{chat.text}</p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {/* Indikator Typing */}
+                        {isTyping && (
+                            <div className="flex justify-start">
+                                <div className="bg-slate-200 dark:bg-slate-700 rounded-full px-4 py-2 flex items-center gap-1">
+                                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Form Input Pesan */}
+                    <form onSubmit={handleSendChat} className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm relative">
+                        {/* Preview Gambar Upload */}
+                        {imagePreview && (
+                            <div className="absolute bottom-full left-0 mb-2 p-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-600 flex items-start gap-2">
+                                <img src={imagePreview} alt="Preview" className="h-16 w-16 object-cover rounded" />
+                                <button type="button" onClick={clearImage} className="text-red-500 hover:bg-red-50 rounded-full p-1"><XCircle size={16}/></button>
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-2">
+                            {/* Tombol Upload Gambar */}
+                            <button 
+                                type="button" 
+                                onClick={() => fileInputRef.current?.click()} 
+                                className="p-2 text-slate-400 hover:text-[#002f6c] dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
+                                title="Kirim Gambar"
+                            >
+                                <Link size={18} />
+                            </button>
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                onChange={handleFileChange} 
+                                className="hidden" 
+                                accept="image/*"
+                            />
+                            
+                            {/* Input Text */}
+                            <input 
+                                type="text" 
+                                value={chatInput} 
+                                onChange={(e) => setChatInput(e.target.value)} 
+                                className="flex-1 bg-transparent border-none outline-none text-sm text-slate-800 dark:text-white placeholder:text-slate-400"
+                                placeholder="Tanya tugas, jadwal, atau curhat..."
+                                disabled={isTyping}
+                            />
+                            
+                            {/* Tombol Kirim */}
+                            <button 
+                                type="submit" 
+                                disabled={(!chatInput.trim() && !imageFile) || isTyping}
+                                className="p-2 bg-[#002f6c] dark:bg-blue-600 text-white rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                            >
+                                <Send size={16} />
+                            </button>
+                        </div>
+                    </form>
+                    <p className="text-[10px] text-center text-slate-400 mt-2">Powered by Gemini AI • Jawaban mungkin tidak 100% akurat.</p>
+                </div>
+            </Modal>
         </div>
     )
 }
