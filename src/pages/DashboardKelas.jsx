@@ -562,6 +562,40 @@ function DashboardKelas({ kelasId }) {
                     )}
                 </div>
             </Modal>
+            {/* MODAL AI ASSISTANT */}
+            <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant">
+                <div className="flex flex-col h-[50vh] md:h-[400px]">
+                    {/* Area Chat */}
+                    <div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">
+                        {chatHistory.map((msg, index) => (
+                            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] p-3 rounded-lg text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#002f6c] text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none'}`}>
+                                    {msg.image && <img src={msg.image} alt="Upload" className="w-full rounded-lg mb-2 border border-white/20" />}
+                                    {msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({ node, ...props }) => <span className="font-bold text-blue-600" {...props} />, a: ({ node, ...props }) => <a className="text-blue-500 underline" target="_blank" {...props} />, code: ({ node, ...props }) => <code className="bg-slate-200 px-1 py-0.5 rounded text-red-500 font-mono text-xs" {...props} /> }}>{msg.text}</ReactMarkdown>}
+                                </div>
+                            </div>
+                        ))}
+                        {isTyping && <div className="flex justify-start"><div className="bg-slate-100 text-slate-500 px-4 py-2 rounded-lg text-xs border border-slate-200 animate-pulse">Mengetik...</div></div>}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Preview Gambar Upload */}
+                    {imagePreview && (
+                        <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                            <div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-300" /><span className="text-xs text-slate-500">Gambar siap dikirim</span></div>
+                            <button onClick={clearImage} className="text-red-500 hover:bg-red-50 rounded-full p-1"><XCircle size={20} /></button>
+                        </div>
+                    )}
+
+                    {/* Input Form */}
+                    <form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-100 pt-3">
+                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-100 hover:bg-slate-200 text-slate-500 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                        <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 focus:outline-none focus:border-emerald-500 text-sm" />
+                        <button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white p-3 rounded-xl shadow-md"><Send size={20} /></button>
+                    </form>
+                </div>
+            </Modal>
         </div>
     )
 }

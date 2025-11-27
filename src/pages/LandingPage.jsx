@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+// FIX: Settings sudah dimasukkan disini
 import { Users, ArrowRight, MapPin, Phone, Globe, ExternalLink, LayoutDashboard, Calendar, ChevronRight, X, Tag, BookOpen, Award, Wifi, Menu, Settings } from 'lucide-react'
-// Import Logo SMK (Tetap dipakai di Footer)
 import logoSekolah from '../assets/images/logosmk.png'
-// Import Logo TKJ (Dipakai di Navbar & Hero)
 import logoJurusan from '../assets/images/logotkj.jpg'
 
 import { collection, query, getDocs } from "firebase/firestore"
@@ -23,18 +22,24 @@ export default function LandingPage() {
   useEffect(() => {
     const fetchData = async () => {
         try {
+            // Ambil Berita
             const qNews = query(collection(db, "berita_sekolah"));
             const snapNews = await getDocs(qNews);
             let allNews = snapNews.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Acak & Ambil 3
             setFeaturedNews(allNews.sort(() => 0.5 - Math.random()).slice(0, 3));
 
+            // Ambil Galeri
             const qGaleri = query(collection(db, "galeri_sekolah"));
             const snapGaleri = await getDocs(qGaleri);
             let allGaleri = snapGaleri.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Ambil 4 Foto
             setGaleriPreview(allGaleri.slice(0, 4)); 
 
         } catch (error) {
-            console.error("Error fetch:", error);
+            console.error("Error fetch data:", error);
         } finally {
             setLoadingNews(false);
         }
@@ -51,7 +56,6 @@ export default function LandingPage() {
           <div className="flex justify-between h-20 items-center">
             <div className="flex items-center gap-3">
               <div className="h-12 w-12 p-1 bg-white/10 rounded-full backdrop-blur-sm overflow-hidden">
-                 {/* GANTI: Pakai Logo TKJ */}
                  <img src={logoJurusan} alt="Logo TKJ" className="h-full w-full object-cover rounded-full"/>
               </div>
               <div className="leading-tight">
@@ -102,12 +106,9 @@ export default function LandingPage() {
           <div className="flex-1 w-full flex justify-center relative mt-8 md:mt-0">
             <div className="w-64 h-64 md:w-96 md:h-96 bg-gradient-to-tr from-white/5 to-white/10 backdrop-blur-2xl rounded-full flex items-center justify-center border-[1px] border-white/20 relative shadow-2xl animate-pulse-slow overflow-hidden">
                 {/* Logo TKJ Besar */}
-                <img 
-                    src={logoJurusan} 
-                    alt="Logo TKJ Besar" 
-                    className="w-full h-full object-cover opacity-90 hover:scale-110 transition-transform duration-500"
-                />
+                <img src={logoJurusan} alt="Logo TKJ Besar" className="w-full h-full object-cover opacity-90 hover:scale-110 transition-transform duration-500"/>
                 <div className="absolute -top-4 -right-4 bg-[#00994d] p-3 rounded-2xl shadow-lg animate-bounce"><Wifi size={24}/></div>
+                {/* Disini Settings dipakai, makanya wajib diimport */}
                 <div className="absolute bottom-10 -left-8 bg-blue-500 p-3 rounded-2xl shadow-lg animate-spin-slow"><Settings size={24}/></div>
             </div>
           </div>
@@ -157,7 +158,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* --- MODAL DETAIL --- */}
+      {/* --- MODAL DETAIL BERITA --- */}
       {selectedNews && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200" onClick={() => setSelectedNews(null)}>
             <div className="bg-white w-full md:max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -176,7 +177,7 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* --- GALERI --- */}
+      {/* --- GALERI PREVIEW --- */}
       <section className="py-16 bg-[#002f6c] text-white relative overflow-hidden">
          <div className="absolute inset-0 opacity-5 bg-[url('https://www.transparenttextures.com/patterns/diagmonds-light.png')]"></div>
          <div className="max-w-7xl mx-auto px-4 relative z-10">
@@ -190,20 +191,20 @@ export default function LandingPage() {
                             <img src={img.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={img.caption}/>
                         </div>
                     ))}
-                    <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center cursor-pointer hover:bg-[#00994d] transition-colors border-2 border-white/10 group" onClick={() => navigate('/galeri')}> 
-     <div className="text-center"><span className="block font-bold text-lg group-hover:scale-110 transition-transform">Lihat<br/>Semua</span><ArrowRight size={20} className="mx-auto mt-2"/></div> 
- </div>
+                    <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center cursor-pointer hover:bg-[#00994d] transition-colors border-2 border-white/10 group" onClick={() => navigate('/galeri')}>
+                        <div className="text-center"><span className="block font-bold text-lg group-hover:scale-110 transition-transform">Lihat<br/>Semua</span><ArrowRight size={20} className="mx-auto mt-2"/></div>
+                    </div>
                 </div>
             )}
          </div>
       </section>
 
-      {/* --- PORTAL --- */}
+      {/* --- PORTAL KELAS --- */}
       <section id="kelas" className="py-24 bg-slate-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16"><h2 className="text-3xl font-black text-[#002f6c] mb-4">Akses Kelas Digital</h2><p className="text-slate-600 max-w-xl mx-auto">Sistem manajemen pembelajaran terintegrasi untuk setiap angkatan.</p></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[{ id: 'X', color: 'bg-cyan-500', light: 'bg-cyan-50', text: 'text-cyan-600', path: '/kelas-x', label: 'Dasar TJKT' },{ id: 'XI', color: 'bg-[#00994d]', light: 'bg-green-50', text: 'text-[#00994d]', path: '/kelas-xi', label: 'Mikrotik, Setting Jaringan, dan Pemrograman' },{ id: 'XII', color: 'bg-indigo-500', light: 'bg-indigo-50', text: 'text-indigo-600', path: '/kelas-xii', label: 'GTW Aku' }].map((k) => (
+            {[{ id: 'X', color: 'bg-cyan-500', light: 'bg-cyan-50', text: 'text-cyan-600', path: '/kelas-x', label: 'Dasar TJKT' },{ id: 'XI', color: 'bg-[#00994d]', light: 'bg-green-50', text: 'text-[#00994d]', path: '/kelas-xi', label: 'Konsentrasi Teknik' },{ id: 'XII', color: 'bg-indigo-500', light: 'bg-indigo-50', text: 'text-indigo-600', path: '/kelas-xii', label: 'Manajemen & Cloud' }].map((k) => (
                 <div key={k.id} className="bg-white rounded-2xl shadow-md hover:shadow-xl hover:-translate-y-1 transition-all p-6 border border-slate-100 text-center flex flex-col items-center group">
                     <div className={`w-16 h-16 ${k.light} ${k.text} rounded-2xl flex items-center justify-center text-2xl font-black mb-4 group-hover:scale-110 transition-transform`}>{k.id}</div>
                     <h3 className="text-xl font-bold text-slate-800 mb-1">Kelas {k.id} TKJ</h3>
