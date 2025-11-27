@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import logoSekolah from '../assets/images/logosmk.png'
 import logoJurusan from '../assets/images/logotkj.jpg'
 
-import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter, UserMinus, CheckCircle, AlertCircle, Home, Eye, Users, Moon, Sun, Newspaper, UploadCloud, Brain } from 'lucide-react'
+import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter, UserMinus, CheckCircle, AlertCircle, Home, Eye, Users, Moon, Sun, Newspaper, UploadCloud, Brain, Clock, Monitor } from 'lucide-react'
 import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc, increment } from "firebase/firestore"
 import { db } from "../services/firebase"
 import useFirestore from '../hooks/useFirestore'
@@ -72,16 +72,21 @@ function DashboardKelas({ kelasId }) {
     const [isAbsenModalOpen, setIsAbsenModalOpen] = useState(false)
     const [isNewsModalOpen, setIsNewsModalOpen] = useState(false)
     const [isGaleriModalOpen, setIsGaleriModalOpen] = useState(false)
-
+    
     // Inputs
     const [pinInput, setPinInput] = useState('')
-    const [settingTab, setSettingTab] = useState('ai')
+    const [settingTab, setSettingTab] = useState('ai') // Default tab setting
 
     // --- SETTING AI ---
     const [apiKeyInput, setApiKeyInput] = useState('')
-    const [isApiKeySet, setIsApiKeySet] = useState(false) // Indikator apakah API Key sudah ada di DB
+    const [isApiKeySet, setIsApiKeySet] = useState(false)
     const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash')
     const [guestAiContext, setGuestAiContext] = useState('')
+
+    // --- STATE COUNTDOWN (DASHBOARD & LANDING) ---
+    const [countdownData, setCountdownData] = useState({ title: '', targetDate: '' })
+    const [landingCountdownData, setLandingCountdownData] = useState({ title: '', targetDate: '' }) // State baru untuk Landing Page
+    const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
 
     const [saldoAwal, setSaldoAwal] = useState(0)
     const [newStudentName, setNewStudentName] = useState('')
@@ -199,6 +204,95 @@ function DashboardKelas({ kelasId }) {
         }
     }
 
+    // --- LOGIC COUNTDOWN (DASHBOARD) ---
+    useEffect(() => {
+        if (!countdownData.targetDate) return;
+        const interval = setInterval(() => {
+            const now = new Date().getTime();
+            const distance = new Date(countdownData.targetDate).getTime() - now;
+
+            if (distance < 0) {
+                setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+            } else {
+                setTimeLeft({
+                    days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+                    minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+                    seconds: Math.floor((distance % (1000 * 60)) / 1000)
+                });
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [countdownData.targetDate]);
+
+    // FETCH CONFIG (AI, KAS, COUNTDOWN DASHBOARD & LANDING)
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const aiSnap = await getDoc(doc(db, 'settings', 'ai_config'));
+                if (aiSnap.exists()) {
+                    if (aiSnap.data().model) setSelectedModel(aiSnap.data().model);
+                    if (aiSnap.data().guest_context) setGuestAiContext(aiSnap.data().guest_context);
+                    if (aiSnap.data().apiKey) setIsApiKeySet(true);
+                }
+
+                const kasSnap = await getDoc(doc(db, 'settings', `${dbPrefix}kas_config`));
+                if (kasSnap.exists()) {
+                    setSaldoAwal(kasSnap.data().saldoAwal || 0);
+                    setNominalKas(kasSnap.data().nominal || 2000);
+                }
+
+                // FETCH COUNTDOWN DASHBOARD
+                const cdSnap = await getDoc(doc(db, 'settings', 'countdown'));
+                if (cdSnap.exists()) {
+                    setCountdownData(cdSnap.data());
+                }
+
+                // FETCH COUNTDOWN LANDING PAGE (BARU)
+                const landingCdSnap = await getDoc(doc(db, 'settings', 'landing_countdown'));
+                if (landingCdSnap.exists()) {
+                    setLandingCountdownData(landingCdSnap.data());
+                }
+
+            } catch (e) { }
+        };
+        loadConfig();
+        const s = localStorage.getItem('tkj_admin_auth'); if (s === 'true') setIsAdmin(true);
+        // window.addEventListener('online', () => setIsOnline(true)); window.addEventListener('offline', () => setIsOnline(false)); // Removed undefined setIsOnline
+        const ci = setInterval(() => { const now = new Date(); setTime(now); }, 1000);
+        return () => clearInterval(ci);
+    }, [dbPrefix])
+
+    // --- SAVE COUNTDOWN DASHBOARD ---
+    const handleSaveCountdown = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'settings', 'countdown'), {
+                title: countdownData.title,
+                targetDate: countdownData.targetDate,
+                updatedAt: serverTimestamp()
+            });
+            triggerToast("Countdown Dashboard Diupdate!");
+        } catch (e) {
+            triggerToast("Gagal update", "error");
+        }
+    }
+
+    // --- SAVE COUNTDOWN LANDING PAGE (BARU) ---
+    const handleSaveLandingCountdown = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'settings', 'landing_countdown'), {
+                title: landingCountdownData.title,
+                targetDate: landingCountdownData.targetDate,
+                updatedAt: serverTimestamp()
+            });
+            triggerToast("Countdown Landing Page Diupdate!");
+        } catch (e) {
+            triggerToast("Gagal update landing", "error");
+        }
+    }
+
     const handlePostNews = async (e) => {
         e.preventDefault();
         if (!newsInput.title || !newsInput.content) { triggerToast("Judul & Isi wajib diisi!", "error"); return; }
@@ -230,32 +324,6 @@ function DashboardKelas({ kelasId }) {
         } catch (e) { triggerToast("Gagal upload: " + e.message, "error"); }
     }
 
-    useEffect(() => {
-        const loadConfig = async () => {
-            try {
-                const aiSnap = await getDoc(doc(db, 'settings', 'ai_config'));
-                if (aiSnap.exists()) {
-                    if (aiSnap.data().model) setSelectedModel(aiSnap.data().model);
-                    if (aiSnap.data().guest_context) setGuestAiContext(aiSnap.data().guest_context);
-
-                    // CEK APAKAH API KEY ADA (Tapi jangan ditampilin semua demi keamanan)
-                    if (aiSnap.data().apiKey) setIsApiKeySet(true);
-                }
-
-                const kasSnap = await getDoc(doc(db, 'settings', `${dbPrefix}kas_config`));
-                if (kasSnap.exists()) {
-                    setSaldoAwal(kasSnap.data().saldoAwal || 0);
-                    setNominalKas(kasSnap.data().nominal || 2000);
-                }
-            } catch (e) { }
-        };
-        loadConfig();
-        const s = localStorage.getItem('tkj_admin_auth'); if (s === 'true') setIsAdmin(true);
-        window.addEventListener('online', () => setIsOnline(true)); window.addEventListener('offline', () => setIsOnline(false));
-        const ci = setInterval(() => { const now = new Date(); setTime(now); }, 1000);
-        return () => clearInterval(ci);
-    }, [dbPrefix])
-
     useEffect(() => { const qi = setInterval(() => { setQuote(p => { if (activeQuotes.length <= 1) return activeQuotes[0]; let r; do { r = Math.floor(Math.random() * activeQuotes.length) } while (activeQuotes[r].text === p.text); return activeQuotes[r]; }) }, 6000); return () => clearInterval(qi) }, [activeQuotes])
     useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [chatHistory, isAiModalOpen, imagePreview])
     useEffect(() => { const c = async () => { try { const t = new Date().toDateString(); const r = doc(db, `${dbPrefix}absensi`, 'harian'); const s = await getDoc(r); if (s.exists()) { const d = s.data(); if (d.lastUpdated?.toDate().toDateString() !== t) { await setDoc(doc(db, `${dbPrefix}absensi_history`, d.lastUpdated.toDate().toISOString().split('T')[0]), { ...d, archivedAt: serverTimestamp() }); await updateDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); window.location.reload(); } } else { await setDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); } } catch (e) { } }; c(); }, [dbPrefix]);
@@ -263,29 +331,13 @@ function DashboardKelas({ kelasId }) {
     const handleLogin = (e) => { e.preventDefault(); if (pinInput === 'tkj123') { setIsAdmin(true); localStorage.setItem('tkj_admin_auth', 'true'); setIsLoginModalOpen(false); setPinInput(''); triggerToast("Login Admin Berhasil!"); } else { triggerToast("PIN Salah!", "error"); setPinInput('') } }
     const handleLogout = () => { if (confirm("Logout?")) { setIsAdmin(false); localStorage.removeItem('tkj_admin_auth'); triggerToast("Berhasil Logout"); } }
 
-    // --- UPDATE: SAVE SETTINGS YANG AMAN ---
     const handleSaveSettings = async (e) => {
         e.preventDefault();
         try {
-            // Objek update untuk AI Config
-            const aiUpdates = {
-                model: selectedModel,
-                guest_context: guestAiContext,
-                updatedAt: serverTimestamp()
-            };
-
-            // HANYA UPDATE API KEY JIKA USER MENGETIK SESUATU
-            // Jika kosong, jangan dikirim ke Firebase (biar key lama gak ilang)
-            if (apiKeyInput.trim()) {
-                aiUpdates.apiKey = apiKeyInput;
-                setIsApiKeySet(true); // Update status lokal
-            }
-
+            const aiUpdates = { model: selectedModel, guest_context: guestAiContext, updatedAt: serverTimestamp() };
+            if (apiKeyInput.trim()) { aiUpdates.apiKey = apiKeyInput; setIsApiKeySet(true); }
             await setDoc(doc(db, 'settings', 'ai_config'), aiUpdates, { merge: true });
-
-            // Save config kas per kelas
             await setDoc(doc(db, 'settings', `${dbPrefix}kas_config`), { saldoAwal: parseInt(saldoAwal), nominal: parseInt(nominalKas), updatedAt: serverTimestamp() });
-
             triggerToast("Konfigurasi Disimpan!"); setIsSettingsModalOpen(false); setApiKeyInput('');
         } catch (e) { triggerToast("Gagal simpan", "error"); }
     }
@@ -322,8 +374,7 @@ function DashboardKelas({ kelasId }) {
         <div className="min-h-screen font-sans bg-slate-100 dark:bg-[#0b1121] text-slate-800 dark:text-slate-100 pb-20 md:pb-0 transition-colors duration-300">
             <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
 
-            {/* HEADER & CONTENT GRID SAMA PERSIS */}
-            {/* BAGIAN INI SAMA SEPERTI SEBELUMNYA (HEADER, GRID LAYOUT) */}
+            {/* HEADER */}
             <div className="bg-[#002f6c] dark:bg-[#0f172a]/80 backdrop-blur-md text-white shadow-md sticky top-0 z-40 border-b-4 border-[#00994d] dark:border-blue-600 transition-colors">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
                     <div className="flex items-center gap-4">
@@ -342,7 +393,6 @@ function DashboardKelas({ kelasId }) {
                 </div>
             </div>
 
-            {/* CONTENT GRID (PASTE BAGIAN KONTEN DARI KODE SEBELUMNYA - SAMA PERSIS) */}
             <div className="p-4 md:p-8 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* INFO & ABSEN */}
                 <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -395,6 +445,50 @@ function DashboardKelas({ kelasId }) {
 
                 {/* MAIN CONTENT */}
                 <div className="md:col-span-8 space-y-6">
+
+                    {/* --- WIDGET COUNTDOWN (DASHBOARD) --- */}
+                    {countdownData.targetDate && (
+                        <div className="bg-gradient-to-r from-[#002f6c] to-[#004bb5] rounded-xl shadow-lg p-6 text-white relative overflow-hidden group">
+                            {/* Background Decoration */}
+                            <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all"></div>
+                            
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                                <div className="text-center md:text-left">
+                                    <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
+                                        <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">Coming Soon</span>
+                                        <Calendar size={14} className="text-blue-200"/>
+                                    </div>
+                                    <h3 className="text-2xl font-black leading-tight mb-1">{countdownData.title}</h3>
+                                    <p className="text-blue-200 text-xs md:text-sm">Persiapkan dirimu, jangan sampai terlewat!</p>
+                                </div>
+
+                                {/* Timer Boxes */}
+                                <div className="flex gap-2 md:gap-3">
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
+                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.days}</span>
+                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Hari</span>
+                                    </div>
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
+                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.hours}</span>
+                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Jam</span>
+                                    </div>
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
+                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.minutes}</span>
+                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Menit</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Jika Countdown kosong tapi Admin login, tampilkan tombol tambah shortcut */}
+                    {!countdownData.targetDate && isAdmin && (
+                         <div onClick={() => { setIsSettingsModalOpen(true); setSettingTab('countdown'); }} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-[#002f6c] transition-colors group">
+                            <Clock size={24} className="mx-auto text-slate-400 group-hover:text-[#002f6c] mb-2"/>
+                            <p className="text-sm font-bold text-slate-500 group-hover:text-[#002f6c]">Setup Hitung Mundur</p>
+                         </div>
+                    )}
+
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 border-t-4 border-[#002f6c] dark:border-blue-500">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                             <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-[#002f6c] dark:text-blue-400 shadow-md"><BookOpen size={20} /></div><div><h2 className="font-bold text-lg text-slate-800 dark:text-slate-200">Jadwal Pelajaran</h2><p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[#002f6c] dark:text-blue-400">{hariPilihan}</p></div></div>
@@ -421,16 +515,18 @@ function DashboardKelas({ kelasId }) {
             {/* ALL MODALS */}
             <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Access"><form onSubmit={handleLogin} className="space-y-4"><div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-600"><Lock size={24} className="text-slate-400 mx-auto mb-2" /><p className="text-xs text-slate-500 dark:text-slate-400">Masukkan PIN Keamanan</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-center text-slate-800 dark:text-white tracking-[8px] text-lg focus:outline-none focus:border-[#002f6c] dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-100" placeholder="••••" autoFocus maxLength={6} /><button className="w-full bg-[#002f6c] hover:bg-blue-800 text-white py-2.5 rounded-lg font-bold shadow-sm transition-all text-sm">Masuk Dashboard</button></form></Modal>
 
-            {/* SETTINGS MODAL (DIPERBAIKI BIAR AI KEY AMAN) */}
+            {/* SETTINGS MODAL */}
             <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Konfigurasi">
-                <form onSubmit={handleSaveSettings} className="space-y-4">
+                
                     <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
-                        <button type="button" onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'ai' ? 'bg-white text-[#002f6c] shadow-sm' : 'text-slate-500'}`}>AI & API</button>
-                        <button type="button" onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'kas' ? 'bg-white text-[#002f6c] shadow-sm' : 'text-slate-500'}`}>Data Kelas</button>
+                        <button type="button" onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'ai' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>AI & API</button>
+                        <button type="button" onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'kas' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Data Kelas</button>
+                        <button type="button" onClick={() => setSettingTab('countdown')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'countdown' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Countdown</button>
                     </div>
 
+                    {/* TAB: AI & API */}
                     {settingTab === 'ai' && (
-                        <div className="space-y-3 animate-in fade-in">
+                        <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-300 mb-1">Gemini API Key</label>
                                 <div className="flex gap-2">
@@ -451,18 +547,92 @@ function DashboardKelas({ kelasId }) {
                                 <p className="text-[10px] text-slate-400 mb-2">Info ini dipakai AI di halaman depan buat jawab pertanyaan tamu.</p>
                                 <textarea value={guestAiContext} onChange={e => setGuestAiContext(e.target.value)} className="w-full bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-slate-700 h-24 focus:border-green-500 outline-none" placeholder="Contoh: Kepala Sekolah Bapak X, Jurusan TKJ berdiri tahun 2010..." />
                             </div>
-                        </div>
+                            <button className="w-full bg-[#00994d] text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 mt-2">Simpan Konfigurasi</button>
+                        </form>
                     )}
 
-                    {/* SETTING KAS (Sama) */}
+                    {/* TAB: DATA KELAS */}
                     {settingTab === 'kas' && (
-                        <div className="space-y-3 animate-in fade-in">
+                        <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
                             <div><label className="block text-xs font-bold text-slate-500 mb-1">Saldo Awal (Rp)</label><input type="number" value={saldoAwal} onChange={e => setSaldoAwal(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-800 text-xs outline-none" /></div>
                             <div className="border-t border-slate-200 pt-3"><label className="block text-xs font-bold text-slate-500 mb-2">Siswa</label><div className="flex gap-2 mb-2"><input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-xs outline-none" placeholder="Nama..." /><button type="button" onClick={handleAddStudent} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Plus size={14} /></button></div><div className="max-h-[100px] overflow-y-auto custom-scrollbar space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-200">{loadingStudents ? <p className="text-xs text-slate-400">Loading...</p> : dataStudents.sort((a, b) => a.name.localeCompare(b.name)).map(s => (<div key={s.id} className="flex justify-between items-center p-1.5 bg-white rounded border border-slate-100"><span className="text-xs font-medium text-slate-700">{s.name}</span><button type="button" onClick={() => handleDeleteStudent(s.id)} className="text-red-400 hover:text-red-600"><X size={12} /></button></div>))}</div></div>
-                        </div>
+                            <button className="w-full bg-[#00994d] text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 mt-2">Simpan Konfigurasi</button>
+                        </form>
                     )}
-                    <button className="w-full bg-[#00994d] text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 mt-2">Simpan Konfigurasi</button>
-                </form>
+
+                    {/* TAB: COUNTDOWN */}
+                    {settingTab === 'countdown' && (
+                         <div className="space-y-6 animate-in fade-in overflow-y-auto max-h-[60vh] custom-scrollbar pr-1">
+                            {/* BAGIAN 1: DASHBOARD */}
+                            <form onSubmit={handleSaveCountdown} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                                <div className="flex items-center gap-2 mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
+                                    <Clock size={16} className="text-blue-600 dark:text-blue-400" />
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Widget Dashboard</h4>
+                                </div>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event</label>
+                                        <input 
+                                            type="text" 
+                                            value={countdownData.title} 
+                                            onChange={e => setCountdownData({...countdownData, title: e.target.value})} 
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
+                                            placeholder="Contoh: PAS Ganjil" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
+                                        <input 
+                                            type="datetime-local" 
+                                            value={countdownData.targetDate} 
+                                            onChange={e => setCountdownData({...countdownData, targetDate: e.target.value})} 
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
+                                        />
+                                    </div>
+                                    <div className="flex gap-2 pt-1">
+                                         <button type="button" onClick={async () => { if(confirm("Hapus?")) { await setDoc(doc(db, 'settings', 'countdown'), { title: '', targetDate: '' }); setCountdownData({ title: '', targetDate: '' }); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
+                                         <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan Dashboard</button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            {/* BAGIAN 2: LANDING PAGE */}
+                            <form onSubmit={handleSaveLandingCountdown} className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                                <div className="flex items-center gap-2 mb-3 border-b border-green-200 dark:border-green-800 pb-2">
+                                    <Monitor size={16} className="text-green-600 dark:text-green-400" />
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-green-800 dark:text-green-300">Widget Landing Page (Publik)</h4>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="text-[10px] text-green-700 dark:text-green-400 bg-white/50 dark:bg-black/20 p-2 rounded">
+                                        Info: Countdown ini muncul di halaman depan website sekolah. Gunakan untuk info PPDB atau Event Besar.
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event Publik</label>
+                                        <input 
+                                            type="text" 
+                                            value={landingCountdownData.title} 
+                                            onChange={e => setLandingCountdownData({...landingCountdownData, title: e.target.value})} 
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
+                                            placeholder="Contoh: Penutupan PPDB" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
+                                        <input 
+                                            type="datetime-local" 
+                                            value={landingCountdownData.targetDate} 
+                                            onChange={e => setLandingCountdownData({...landingCountdownData, targetDate: e.target.value})} 
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
+                                        />
+                                    </div>
+                                    <div className="flex gap-2 pt-1">
+                                         <button type="button" onClick={async () => { if(confirm("Hapus Landing Page Countdown?")) { await setDoc(doc(db, 'settings', 'landing_countdown'), { title: '', targetDate: '' }); setLandingCountdownData({ title: '', targetDate: '' }); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
+                                         <button type="submit" className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan ke Publik</button>
+                                    </div>
+                                </div>
+                            </form>
+                         </div>
+                    )}
             </Modal>
 
             {/* Modal Sisa (Kas, News, Galeri, dll - SAMA SEPERTI SEBELUMNYA) */}
