@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Image } from 'lucide-react'
+import { ArrowLeft, Image, X } from 'lucide-react'
 import { collection, query, orderBy, getDocs } from "firebase/firestore"
 import { db } from "../services/firebase"
 
@@ -47,10 +47,10 @@ export default function GaleriPage() {
             ) : (
                 <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
                     {galeri.map((item) => (
-                        <div key={item.id} className="break-inside-avoid bg-white rounded-xl shadow-sm overflow-hidden group cursor-pointer" onClick={() => setSelectedImg(item)}>
+                        <div key={item.id} className="break-inside-avoid bg-white rounded-xl shadow-sm overflow-hidden group cursor-pointer hover:shadow-lg transition-all" onClick={() => setSelectedImg(item)}>
                             <img src={item.image} alt={item.caption} className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-105"/>
-                            <div className="p-3">
-                                <p className="text-sm font-medium text-slate-700">{item.caption}</p>
+                            <div className="p-3 bg-white">
+                                <p className="text-sm font-medium text-slate-700 line-clamp-2">{item.caption}</p>
                                 <p className="text-[10px] text-slate-400 mt-1">Oleh: {item.author}</p>
                             </div>
                         </div>
@@ -61,10 +61,14 @@ export default function GaleriPage() {
 
         {/* LIGHTBOX MODAL */}
         {selectedImg && (
-            <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedImg(null)}>
-                <img src={selectedImg.image} className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"/>
-                <div className="absolute bottom-10 left-0 w-full text-center text-white p-4">
-                    <p className="font-bold text-lg">{selectedImg.caption}</p>
+            <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImg(null)}>
+                <button className="absolute top-4 right-4 text-white bg-white/10 p-2 rounded-full hover:bg-white/20"><X size={24}/></button>
+                <div className="max-w-4xl w-full">
+                    <img src={selectedImg.image} className="max-w-full max-h-[80vh] mx-auto rounded-lg shadow-2xl border-2 border-white/10"/>
+                    <div className="text-center text-white mt-4">
+                        <p className="font-bold text-lg">{selectedImg.caption}</p>
+                        <p className="text-sm opacity-70 mt-1">Diunggah oleh {selectedImg.author}</p>
+                    </div>
                 </div>
             </div>
         )}

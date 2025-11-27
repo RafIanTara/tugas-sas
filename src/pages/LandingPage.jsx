@@ -132,6 +132,9 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4 text-center md:text-left">
             <div><h2 className="text-2xl md:text-3xl font-black text-[#002f6c]">Sekilas <span className="text-[#00994d]">TKJ</span></h2><p className="text-slate-500 mt-1">Kegiatan, prestasi, dan inovasi terbaru siswa.</p></div>
+            <button onClick={() => navigate('/berita')} className="text-sm font-bold text-[#00994d] hover:underline flex items-center gap-1">
+                Lihat Arsip Berita <ArrowRight size={16}/>
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {loadingNews ? ([1,2,3].map(i => <div key={i} className="h-64 bg-slate-200 rounded-xl animate-pulse"></div>)) : featuredNews.length === 0 ? (<div className="col-span-3 text-center py-10 bg-white border border-dashed border-slate-300 rounded-xl text-slate-400">Belum ada berita yang diupload.</div>) : (
@@ -187,9 +190,9 @@ export default function LandingPage() {
                             <img src={img.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={img.caption}/>
                         </div>
                     ))}
-                    <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center cursor-pointer hover:bg-[#00994d] transition-colors border-2 border-white/10 group" onClick={() => navigate('/galeri')}>
-                        <div className="text-center"><span className="block font-bold text-lg group-hover:scale-110 transition-transform">Lihat<br/>Semua</span><ArrowRight size={20} className="mx-auto mt-2"/></div>
-                    </div>
+                    <div className="aspect-square bg-slate-800 rounded-xl overflow-hidden flex items-center justify-center cursor-pointer hover:bg-[#00994d] transition-colors border-2 border-white/10 group" onClick={() => navigate('/galeri')}> 
+     <div className="text-center"><span className="block font-bold text-lg group-hover:scale-110 transition-transform">Lihat<br/>Semua</span><ArrowRight size={20} className="mx-auto mt-2"/></div> 
+ </div>
                 </div>
             )}
          </div>
