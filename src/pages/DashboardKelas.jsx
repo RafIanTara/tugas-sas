@@ -12,6 +12,20 @@ import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from "framer-motion"
 import * as XLSX from 'xlsx'
 
+// --- DEFINISI ROLES ---
+const ROLES = {
+    SISWA: 'SISWA',
+    GURU: 'GURU',
+    ADMIN: 'ADMIN',
+    GUEST: 'GUEST'
+}
+
+const PIN_MAP = {
+    'siswatkj': ROLES.SISWA,
+    'guruku': ROLES.GURU,
+    'daus': ROLES.ADMIN
+}
+
 const DEFAULT_QUOTES = [
     { text: "Hidup hidupilah Muhammadiyah, jangan mencari hidup di Muhammadiyah.", author: "KH. Ahmad Dahlan" },
     { text: "Pendidikan adalah senjata paling mematikan untuk mengubah dunia.", author: "Nelson Mandela" }
@@ -46,6 +60,13 @@ function DashboardKelas({ kelasId }) {
     const navigate = useNavigate()
     const dbPrefix = kelasId.toLowerCase() + '_';
 
+    // --- STATE UTAMA UNTUK OTORISASI ---
+    const [currentRole, setCurrentRole] = useState(() => localStorage.getItem('tkj_user_role') || ROLES.GUEST)
+    const isAdmin = currentRole === ROLES.ADMIN
+    const isGuru = currentRole === ROLES.GURU || isAdmin // Guru includes Admin access for most features
+    const isReadOnly = currentRole === ROLES.SISWA || currentRole === ROLES.GUEST
+    // ------------------------------------
+
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
     useEffect(() => { if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark') } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light') } }, [isDarkMode])
 
@@ -54,12 +75,11 @@ function DashboardKelas({ kelasId }) {
     const [hariPilihan, setHariPilihan] = useState(namaHariIni)
     const [quote, setQuote] = useState(DEFAULT_QUOTES[0])
     const [newQuoteText, setNewQuoteText] = useState('')
-    const [isAdmin, setIsAdmin] = useState(false)
     const [toast, setToast] = useState(null)
-
+    
     // Modals
     const [isStrukturModalOpen, setIsStrukturModalOpen] = useState(false)
-    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(true) // <-- SET TRUE AGAR MODAL PIN MUNCUL PERTAMA
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
     const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
@@ -257,15 +277,63 @@ function DashboardKelas({ kelasId }) {
             } catch (e) { }
         };
         loadConfig();
-        const s = localStorage.getItem('tkj_admin_auth'); if (s === 'true') setIsAdmin(true);
-        // window.addEventListener('online', () => setIsOnline(true)); window.addEventListener('offline', () => setIsOnline(false)); // Removed undefined setIsOnline
+        const storedRole = localStorage.getItem('tkj_user_role');
+        if (storedRole && storedRole !== ROLES.GUEST) {
+            setIsLoginModalOpen(false); // Jika sudah ada role tersimpan, langsung masuk
+        } else {
+            setIsLoginModalOpen(true); // Jika belum ada role, tampilkan modal login
+        }
+        
         const ci = setInterval(() => { const now = new Date(); setTime(now); }, 1000);
         return () => clearInterval(ci);
     }, [dbPrefix])
 
+    // LOGIC CHECK HARI BARU UNTUK ABSENSI
+    useEffect(() => { const c = async () => { try { const t = new Date().toDateString(); const r = doc(db, `${dbPrefix}absensi`, 'harian'); const s = await getDoc(r); if (s.exists()) { const d = s.data(); if (d.lastUpdated?.toDate().toDateString() !== t) { await setDoc(doc(db, `${dbPrefix}absensi_history`, d.lastUpdated.toDate().toISOString().split('T')[0]), { ...d, archivedAt: serverTimestamp() }); await updateDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); window.location.reload(); } } else { await setDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); } } catch (e) { } }; c(); }, [dbPrefix]);
+
+    // LOGIC RANDOM QUOTE
+    useEffect(() => { const qi = setInterval(() => { setQuote(p => { if (activeQuotes.length <= 1) return activeQuotes[0]; let r; do { r = Math.floor(Math.random() * activeQuotes.length) } while (activeQuotes[r].text === p.text); return activeQuotes[r]; }) }, 6000); return () => clearInterval(qi) }, [activeQuotes])
+    
+    // SCROLL TO CHAT END
+    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [chatHistory, isAiModalOpen, imagePreview])
+
+    // --- FUNGSI OTORISASI ---
+    const checkAuth = (minRole) => {
+        if (minRole === ROLES.SISWA && currentRole !== ROLES.GUEST) return true;
+        if (minRole === ROLES.GURU && isGuru) return true;
+        if (minRole === ROLES.ADMIN && isAdmin) return true;
+        return false;
+    }
+
+    const handleLogin = (e) => {
+        e.preventDefault();
+        const role = PIN_MAP[pinInput];
+        if (role) {
+            setCurrentRole(role);
+            localStorage.setItem('tkj_user_role', role);
+            setIsLoginModalOpen(false);
+            setPinInput('');
+            triggerToast(`Login Berhasil! Role: ${role}`);
+        } else {
+            triggerToast("PIN Salah!", "error");
+            setPinInput('');
+        }
+    }
+
+    const handleLogout = () => {
+        if (confirm("Logout?")) {
+            setCurrentRole(ROLES.GUEST);
+            localStorage.removeItem('tkj_user_role');
+            setIsLoginModalOpen(true); // Tampilkan modal login lagi
+            triggerToast("Berhasil Logout");
+        }
+    }
+    // -------------------------
+
     // --- SAVE COUNTDOWN DASHBOARD ---
     const handleSaveCountdown = async (e) => {
         e.preventDefault();
+        if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; }
         try {
             await setDoc(doc(db, 'settings', 'countdown'), {
                 title: countdownData.title,
@@ -281,6 +349,7 @@ function DashboardKelas({ kelasId }) {
     // --- SAVE COUNTDOWN LANDING PAGE (BARU) ---
     const handleSaveLandingCountdown = async (e) => {
         e.preventDefault();
+        if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; }
         try {
             await setDoc(doc(db, 'settings', 'landing_countdown'), {
                 title: landingCountdownData.title,
@@ -295,12 +364,13 @@ function DashboardKelas({ kelasId }) {
 
     const handlePostNews = async (e) => {
         e.preventDefault();
+        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
         if (!newsInput.title || !newsInput.content) { triggerToast("Judul & Isi wajib diisi!", "error"); return; }
         try {
             await addDoc(collection(db, 'berita_sekolah'), {
                 title: newsInput.title, category: newsInput.category, content: newsInput.content,
                 image: newsInput.imageBase64 || null,
-                author: `Admin Kelas ${kelasId} TKJ`,
+                author: `${currentRole} Kelas ${kelasId}`,
                 createdAt: serverTimestamp(),
                 dateString: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
             });
@@ -311,12 +381,13 @@ function DashboardKelas({ kelasId }) {
 
     const handlePostGaleri = async (e) => {
         e.preventDefault();
+        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
         if (!galeriInput.imageBase64) { triggerToast("Wajib upload foto wak!", "error"); return; }
         try {
             await addDoc(collection(db, 'galeri_sekolah'), {
                 caption: galeriInput.caption || 'Tanpa Keterangan',
                 image: galeriInput.imageBase64,
-                author: `Admin Kelas ${kelasId}`,
+                author: `${currentRole} Kelas ${kelasId}`,
                 createdAt: serverTimestamp()
             });
             triggerToast("Foto Masuk Galeri!"); setIsGaleriModalOpen(false);
@@ -324,52 +395,92 @@ function DashboardKelas({ kelasId }) {
         } catch (e) { triggerToast("Gagal upload: " + e.message, "error"); }
     }
 
-    useEffect(() => { const qi = setInterval(() => { setQuote(p => { if (activeQuotes.length <= 1) return activeQuotes[0]; let r; do { r = Math.floor(Math.random() * activeQuotes.length) } while (activeQuotes[r].text === p.text); return activeQuotes[r]; }) }, 6000); return () => clearInterval(qi) }, [activeQuotes])
-    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [chatHistory, isAiModalOpen, imagePreview])
-    useEffect(() => { const c = async () => { try { const t = new Date().toDateString(); const r = doc(db, `${dbPrefix}absensi`, 'harian'); const s = await getDoc(r); if (s.exists()) { const d = s.data(); if (d.lastUpdated?.toDate().toDateString() !== t) { await setDoc(doc(db, `${dbPrefix}absensi_history`, d.lastUpdated.toDate().toISOString().split('T')[0]), { ...d, archivedAt: serverTimestamp() }); await updateDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); window.location.reload(); } } else { await setDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); } } catch (e) { } }; c(); }, [dbPrefix]);
-
-    const handleLogin = (e) => { e.preventDefault(); if (pinInput === 'tkj123') { setIsAdmin(true); localStorage.setItem('tkj_admin_auth', 'true'); setIsLoginModalOpen(false); setPinInput(''); triggerToast("Login Admin Berhasil!"); } else { triggerToast("PIN Salah!", "error"); setPinInput('') } }
-    const handleLogout = () => { if (confirm("Logout?")) { setIsAdmin(false); localStorage.removeItem('tkj_admin_auth'); triggerToast("Berhasil Logout"); } }
-
     const handleSaveSettings = async (e) => {
         e.preventDefault();
+        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
         try {
-            const aiUpdates = { model: selectedModel, guest_context: guestAiContext, updatedAt: serverTimestamp() };
-            if (apiKeyInput.trim()) { aiUpdates.apiKey = apiKeyInput; setIsApiKeySet(true); }
-            await setDoc(doc(db, 'settings', 'ai_config'), aiUpdates, { merge: true });
-            await setDoc(doc(db, 'settings', `${dbPrefix}kas_config`), { saldoAwal: parseInt(saldoAwal), nominal: parseInt(nominalKas), updatedAt: serverTimestamp() });
+            // Logika AI hanya untuk ADMIN
+            if (settingTab === 'ai' && isAdmin) {
+                const aiUpdates = { model: selectedModel, guest_context: guestAiContext, updatedAt: serverTimestamp() };
+                if (apiKeyInput.trim()) { aiUpdates.apiKey = apiKeyInput; setIsApiKeySet(true); }
+                await setDoc(doc(db, 'settings', 'ai_config'), aiUpdates, { merge: true });
+            } else if (settingTab === 'kas') {
+                 // Logika Data Kelas (Guru/Admin)
+                await setDoc(doc(db, 'settings', `${dbPrefix}kas_config`), { saldoAwal: parseInt(saldoAwal), nominal: parseInt(nominalKas), updatedAt: serverTimestamp() });
+            }
             triggerToast("Konfigurasi Disimpan!"); setIsSettingsModalOpen(false); setApiKeyInput('');
         } catch (e) { triggerToast("Gagal simpan", "error"); }
     }
 
-    const handleBuktiChange = (e) => { const f = e.target.files[0]; if (f && f.size <= 500 * 1024) { setBuktiFile(f); const r = new FileReader(); r.onloadend = () => setBuktiPreview(r.result); r.readAsDataURL(f); } else { triggerToast("File max 500KB!", "error"); } }
-    const handleAddKas = async (e) => { e.preventDefault(); if (!kasInput.nama || !kasInput.jumlah) return; try { await addDoc(collection(db, `${dbPrefix}uang_kas`), { tanggal: kasInput.tanggal, nama: kasInput.nama, jumlah: parseInt(kasInput.jumlah.replace(/\./g, '')), tipe: kasInput.tipe, keterangan: kasInput.keterangan || '-', createdAt: serverTimestamp(), buktiFoto: buktiPreview }); setKasInput({ ...kasInput, nama: '', jumlah: '', keterangan: '' }); clearBukti(); triggerToast("Transaksi Berhasil!"); } catch (e) { triggerToast("Gagal simpan", "error"); } }
-    const handleDeleteKas = async (id) => { if (confirm("Hapus?")) try { await deleteDoc(doc(db, `${dbPrefix}uang_kas`, id)); triggerToast("Dihapus"); } catch (e) { triggerToast("Gagal hapus", "error") } }
-    const handleExportExcel = () => { const d = dataKas.map(i => ({ "Tgl": i.tanggal, "Ket": `${i.nama} (${i.keterangan})`, "Masuk": i.tipe === 'masuk' ? i.jumlah : 0, "Keluar": i.tipe === 'keluar' ? i.jumlah : 0 })); d.unshift({ "Tgl": "SALDO AWAL", "Masuk": parseInt(saldoAwal) }); d.push({ "Tgl": "TOTAL", "Masuk": totalSaldoAkhir }); const ws = XLSX.utils.json_to_sheet(d); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Kas"); XLSX.writeFile(wb, `Laporan_Kas_Kelas_${kelasId}.xlsx`); triggerToast("Download Dimulai!"); }
-    const handleAddStudent = async (e) => { e.preventDefault(); if (newStudentName.trim()) { await addDoc(collection(db, `${dbPrefix}students`), { name: newStudentName, createdAt: serverTimestamp() }); setNewStudentName(''); triggerToast("Siswa Ditambahkan"); } }
-    const handleDeleteStudent = async (id) => { if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}students`, id)); triggerToast("Siswa Dihapus"); } }
-    const handleAddQuote = async (e) => { e.preventDefault(); if (newQuoteText.trim()) { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText(''); triggerToast("Quote Ditambah"); } }
-    const handleDeleteQuote = async (id) => { if (confirm("Hapus?")) { await deleteDoc(doc(db, 'quotes', id)); triggerToast("Quote Dihapus"); } }
-    const handleSaveAbsensi = async (e) => { e.preventDefault(); try { await setDoc(doc(db, `${dbPrefix}absensi`, 'harian'), { sakit: absenInput.sakit || '-', izin: absenInput.izin || '-', alpha: absenInput.alpha || '-', lastUpdated: serverTimestamp() }); setIsAbsenModalOpen(false); setAbsenTab('view'); triggerToast("Absensi Diupdate!"); } catch (e) { triggerToast("Gagal update", "error"); } }
+    // FUNGSI KHUSUS
+    const handleBuktiChange = (e) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const f = e.target.files[0]; if (f && f.size <= 500 * 1024) { setBuktiFile(f); const r = new FileReader(); r.onloadend = () => setBuktiPreview(r.result); r.readAsDataURL(f); } else { triggerToast("File max 500KB!", "error"); } }
+    const handleAddKas = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (!kasInput.nama || !kasInput.jumlah) return; try { await addDoc(collection(db, `${dbPrefix}uang_kas`), { tanggal: kasInput.tanggal, nama: kasInput.nama, jumlah: parseInt(kasInput.jumlah.replace(/\./g, '')), tipe: kasInput.tipe, keterangan: kasInput.keterangan || '-', createdAt: serverTimestamp(), buktiFoto: buktiPreview }); setKasInput({ ...kasInput, nama: '', jumlah: '', keterangan: '' }); clearBukti(); triggerToast("Transaksi Berhasil!"); } catch (e) { triggerToast("Gagal simpan", "error"); } }
+    const handleDeleteKas = async (id) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) try { await deleteDoc(doc(db, `${dbPrefix}uang_kas`, id)); triggerToast("Dihapus"); } catch (e) { triggerToast("Gagal hapus", "error") } }
+    const handleExportExcel = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const d = dataKas.map(i => ({ "Tgl": i.tanggal, "Ket": `${i.nama} (${i.keterangan})`, "Masuk": i.tipe === 'masuk' ? i.jumlah : 0, "Keluar": i.tipe === 'keluar' ? i.jumlah : 0 })); d.unshift({ "Tgl": "SALDO AWAL", "Masuk": parseInt(saldoAwal) }); d.push({ "Tgl": "TOTAL", "Masuk": totalSaldoAkhir }); const ws = XLSX.utils.json_to_sheet(d); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Kas"); XLSX.writeFile(wb, `Laporan_Kas_Kelas_${kelasId}.xlsx`); triggerToast("Download Dimulai!"); }
+    const handleAddStudent = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (newStudentName.trim()) { await addDoc(collection(db, `${dbPrefix}students`), { name: newStudentName, createdAt: serverTimestamp() }); setNewStudentName(''); triggerToast("Siswa Ditambahkan"); } }
+    const handleDeleteStudent = async (id) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}students`, id)); triggerToast("Siswa Dihapus"); } }
+    const handleAddQuote = async (e) => { e.preventDefault(); if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; } if (newQuoteText.trim()) { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText(''); triggerToast("Quote Ditambah"); } }
+    const handleDeleteQuote = async (id) => { if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, 'quotes', id)); triggerToast("Quote Dihapus"); } }
+    const handleSaveAbsensi = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } try { await setDoc(doc(db, `${dbPrefix}absensi`, 'harian'), { sakit: absenInput.sakit || '-', izin: absenInput.izin || '-', alpha: absenInput.alpha || '-', lastUpdated: serverTimestamp() }); setIsAbsenModalOpen(false); setAbsenTab('view'); triggerToast("Absensi Diupdate!"); } catch (e) { triggerToast("Gagal update", "error"); } }
     const openAbsenModal = (tab = 'view') => { setAbsenInput({ sakit: absenHariIni.sakit !== '-' ? absenHariIni.sakit : '', izin: absenHariIni.izin !== '-' ? absenHariIni.izin : '', alpha: absenHariIni.alpha !== '-' ? absenHariIni.alpha : '' }); setAbsenTab(tab); setIsAbsenModalOpen(true); }
-    const handleAddTask = async (e) => { e.preventDefault(); if (newTask.judul) { await addDoc(collection(db, `${dbPrefix}tugas`), { judul: newTask.judul, mapel: newTask.mapel || 'Umum', selesai: false, createdAt: serverTimestamp() }); setNewTask({ judul: '', mapel: '' }); setIsTaskModalOpen(false); triggerToast("Tugas Ditambahkan"); } }
-    const handleDeleteTask = async (e, id) => { e.stopPropagation(); if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}tugas`, id)); triggerToast("Tugas Dihapus"); } }
-    const handleToggleTask = async (id, s) => { await updateDoc(doc(db, `${dbPrefix}tugas`, id), { selesai: !s }); }
-    const handleSaveSchedule = async (e) => { e.preventDefault(); const m = scheduleInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}jadwal`, hariPilihan), { mapel: m, updatedAt: serverTimestamp() }); setIsScheduleModalOpen(false); triggerToast("Jadwal Diupdate"); }
-    const handleSavePiket = async (e) => { e.preventDefault(); const n = piketInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}piket`, hariPilihan), { names: n, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false); triggerToast("Piket Diupdate"); }
-    const handleSaveInfo = async (e) => { e.preventDefault(); await setDoc(doc(db, 'pengumuman', 'info_utama'), { isi: infoInput, updatedAt: serverTimestamp() }); setIsInfoModalOpen(false); triggerToast("Info Dibroadcast"); }
-    const openScheduleModal = () => { setScheduleInput(jadwalTampil ? jadwalTampil.mapel.join(', ') : ''); setIsScheduleModalOpen(true); }
-    const openPiketModal = () => { setPiketInput(piketTampil ? piketTampil.names.join(', ') : ''); setIsPiketModalOpen(true); }
-    const openInfoModal = () => { const i = dataInfo.find(x => x.id === 'info_utama') || dataInfo[0]; setInfoInput(i ? i.isi : ''); setIsInfoModalOpen(true); }
+    const handleAddTask = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (newTask.judul) { await addDoc(collection(db, `${dbPrefix}tugas`), { judul: newTask.judul, mapel: newTask.mapel || 'Umum', selesai: false, createdAt: serverTimestamp() }); setNewTask({ judul: '', mapel: '' }); setIsTaskModalOpen(false); triggerToast("Tugas Ditambahkan"); } }
+    const handleDeleteTask = async (e, id) => { e.stopPropagation(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}tugas`, id)); triggerToast("Tugas Dihapus"); } }
+    const handleToggleTask = async (id, s) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } await updateDoc(doc(db, `${dbPrefix}tugas`, id), { selesai: !s }); }
+    const handleSaveSchedule = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const m = scheduleInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}jadwal`, hariPilihan), { mapel: m, updatedAt: serverTimestamp() }); setIsScheduleModalOpen(false); triggerToast("Jadwal Diupdate"); }
+    const handleSavePiket = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const n = piketInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}piket`, hariPilihan), { names: n, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false); triggerToast("Piket Diupdate"); }
+    const handleSaveInfo = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } await setDoc(doc(db, 'pengumuman', 'info_utama'), { isi: infoInput, updatedAt: serverTimestamp() }); setIsInfoModalOpen(false); triggerToast("Info Dibroadcast"); }
+    const openScheduleModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setScheduleInput(jadwalTampil ? jadwalTampil.mapel.join(', ') : ''); setIsScheduleModalOpen(true); }
+    const openPiketModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setPiketInput(piketTampil ? piketTampil.names.join(', ') : ''); setIsPiketModalOpen(true); }
+    const openInfoModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const i = dataInfo.find(x => x.id === 'info_utama') || dataInfo[0]; setInfoInput(i ? i.isi : ''); setIsInfoModalOpen(true); }
 
     async function fileToGenerativePart(file) { const r = new FileReader(); const p = new Promise(res => r.onloadend = () => res(r.result.split(',')[1])); r.readAsDataURL(file); return { inlineData: { data: await p, mimeType: file.type } }; }
-    const handleSendChat = async (e) => { e.preventDefault(); if (!chatInput.trim() && !imageFile) return; const msg = { role: 'user', text: chatInput, image: imagePreview }; setChatHistory(p => [...p, msg]); setChatInput(''); setImageFile(null); setImagePreview(null); setIsTyping(true); try { const s = await getDoc(doc(db, 'settings', 'ai_config')); if (!s.exists()) throw new Error("API Key belum diset"); const genAI = new GoogleGenerativeAI(s.data().apiKey); const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' }); const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n'); const prompt = `Role: "TKJ Assistant", AI asisten SMK TKJ.\nStyle: Gaul tapi SOPAN. NO SARA/PORNO/JUDI.\nContext:\n${ctx}\nUser: "${msg.text}"`; const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt); setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]); } catch (e) { setChatHistory(p => [...p, { role: 'model', text: `Error: ${e.message}` }]); } finally { setIsTyping(false); } }
-    const handlePdfImageChange = (e) => { if (e.target.files) setPdfImages(p => [...p, ...Array.from(e.target.files).map(f => ({ file: f, url: URL.createObjectURL(f) }))]) }
-    const handleGeneratePdf = () => { setPdfImages([]); setIsPdfModalOpen(false); triggerToast("PDF Dibuat!"); }
-    const removePdfImage = (i) => { const n = [...pdfImages]; n.splice(i, 1); setPdfImages(n); }
+    const handleSendChat = async (e) => {
+        e.preventDefault();
+        if (!chatInput.trim() && !imageFile) return;
+        
+        // Cek apakah API Key sudah diset (hanya butuh untuk AI Chat)
+        const s = await getDoc(doc(db, 'settings', 'ai_config'));
+        if (!s.exists() || !s.data().apiKey) {
+            setChatHistory(p => [...p, { role: 'model', text: `Error: API Key belum diset oleh Admin. AI tidak bisa merespon.` }]);
+            return;
+        }
+
+        const msg = { role: 'user', text: chatInput, image: imagePreview }; 
+        setChatHistory(p => [...p, msg]); 
+        setChatInput(''); 
+        setImageFile(null); 
+        setImagePreview(null); 
+        setIsTyping(true); 
+        
+        try { 
+            const genAI = new GoogleGenerativeAI(s.data().apiKey); 
+            const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' }); 
+            const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n'); 
+            const prompt = `Role: "TKJ Assistant", AI asisten SMK TKJ.\nStyle: Gaul tapi SOPAN. NO SARA/PORNO/JUDI.\nContext:\n${ctx}\nUser: "${msg.text}"`; 
+            const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt); 
+            setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]); 
+        } catch (e) { 
+            setChatHistory(p => [...p, { role: 'model', text: `Error: ${e.message}. Cek API Key atau Model AI di Pengaturan.` }]); 
+        } finally { setIsTyping(false); }
+    }
+    const handlePdfImageChange = (e) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (e.target.files) setPdfImages(p => [...p, ...Array.from(e.target.files).map(f => ({ file: f, url: URL.createObjectURL(f) }))]) }
+    const handleGeneratePdf = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setPdfImages([]); setIsPdfModalOpen(false); triggerToast("PDF Dibuat!"); }
+    const removePdfImage = (i) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const n = [...pdfImages]; n.splice(i, 1); setPdfImages(n); }
     const handleFileChange = (e) => { const f = e.target.files[0]; if (f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result); r.readAsDataURL(f); } }
     const clearImage = () => { setImageFile(null); setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
 
+    // Jika belum login, tampilkan loading/halaman kosong
+    if (currentRole === ROLES.GUEST && !isLoginModalOpen) {
+        // Ini adalah fallback, seharusnya modal login muncul
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-[#0b1121] text-slate-400">
+                <Lock size={48} />
+                <p className="ml-4 text-lg">Memuat Gerbang Akses...</p>
+                <button onClick={() => setIsLoginModalOpen(true)} className="ml-4 text-blue-500 hover:underline">Masuk</button>
+            </div>
+        );
+    }
+    
     return (
         <div className="min-h-screen font-sans bg-slate-100 dark:bg-[#0b1121] text-slate-800 dark:text-slate-100 pb-20 md:pb-0 transition-colors duration-300">
             <AnimatePresence>{toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
@@ -386,8 +497,16 @@ function DashboardKelas({ kelasId }) {
                         <div className="flex items-center gap-2">
                             <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all border border-white/10">{isDarkMode ? <Sun size={18} className="text-yellow-300" /> : <Moon size={18} />}</button>
                             <button onClick={() => navigate('/')} className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg shadow-sm border border-blue-400/50 text-xs font-bold transition-all"><Home size={16} /> <span className="hidden md:inline">Home</span></button>
-                            {isAdmin ? (<button onClick={handleLogout} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg shadow-md border border-red-400 text-xs font-bold transition-all"><LogOut size={16} /> <span className="hidden md:inline">Keluar</span></button>) : (<button onClick={() => setIsLoginModalOpen(true)} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all border border-white/20 backdrop-blur-sm"><Lock size={16} /> Admin</button>)}
-                            {isAdmin && (<button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-700/50 hover:bg-slate-600 p-2 rounded-lg text-slate-200 transition-colors border border-slate-600"><Settings size={18} /></button>)}
+                            {currentRole !== ROLES.GUEST ? (
+                                <button onClick={handleLogout} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg shadow-md border border-red-400 text-xs font-bold transition-all">
+                                    <LogOut size={16} /> <span className="hidden md:inline">Keluar ({currentRole})</span>
+                                </button>
+                            ) : (
+                                <button onClick={() => setIsLoginModalOpen(true)} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all border border-white/20 backdrop-blur-sm">
+                                    <Lock size={16} /> Masuk
+                                </button>
+                            )}
+                            {(isAdmin || isGuru) && (<button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-700/50 hover:bg-slate-600 p-2 rounded-lg text-slate-200 transition-colors border border-slate-600"><Settings size={18} /></button>)}
                         </div>
                     </div>
                 </div>
@@ -398,11 +517,11 @@ function DashboardKelas({ kelasId }) {
                 <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-2 bg-white dark:bg-slate-800 border-l-[6px] border-[#002f6c] dark:border-blue-500 p-6 rounded-r-lg shadow-sm flex flex-col justify-between relative overflow-hidden transition-colors">
                         <div className="relative z-10"><div className="flex items-center gap-2 mb-2"><span className="bg-[#002f6c] dark:bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider shadow-sm flex items-center gap-1"><Megaphone size={10} /> Info Sekolah</span></div>{dataInfo.length > 0 ? <p className="text-slate-800 dark:text-slate-200 text-sm font-medium leading-relaxed border-l-2 border-slate-200 dark:border-slate-600 pl-3">{dataInfo.find(i => i.id === 'info_utama')?.isi || dataInfo[0]?.isi}</p> : <p className="text-slate-400 italic text-sm">Tidak ada pengumuman.</p>}</div>
-                        {isAdmin && <button onClick={openInfoModal} className="text-[#002f6c] dark:text-blue-400 hover:text-white hover:bg-[#002f6c] dark:hover:bg-blue-600 flex items-center gap-1 text-xs font-bold border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded transition-all shadow-sm w-fit mt-4"><Edit3 size={12} /> Edit</button>}
+                        {(isAdmin || isGuru) && <button onClick={openInfoModal} className="text-[#002f6c] dark:text-blue-400 hover:text-white hover:bg-[#002f6c] dark:hover:bg-blue-600 flex items-center gap-1 text-xs font-bold border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded transition-all shadow-sm w-fit mt-4"><Edit3 size={12} /> Edit</button>}
                     </div>
                     <div className="bg-white dark:bg-slate-800 border-t-4 border-red-500 dark:border-pink-600 rounded-lg shadow-sm overflow-hidden flex flex-col transition-colors">
                         <div className="p-5 flex-1">
-                            <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm flex items-center gap-2"><UserMinus size={16} className="text-red-500 dark:text-pink-500" /> Absensi {kelasId}</h3>{isAdmin && (<button onClick={() => openAbsenModal('input')} className="text-slate-400 hover:text-red-500 bg-red-50 dark:bg-slate-700 p-1.5 rounded-md transition-colors"><Edit3 size={14} /></button>)}</div>
+                            <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm flex items-center gap-2"><UserMinus size={16} className="text-red-500 dark:text-pink-500" /> Absensi {kelasId}</h3>{(isAdmin || isGuru) && (<button onClick={() => openAbsenModal('input')} className="text-slate-400 hover:text-red-500 bg-red-50 dark:bg-slate-700 p-1.5 rounded-md transition-colors"><Edit3 size={14} /></button>)}</div>
                             <div className="grid grid-cols-3 gap-2 text-center">
                                 <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-100 dark:border-yellow-800 flex flex-col items-center justify-center"><span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-bold uppercase tracking-wider mb-1">Sakit</span><span className="text-xl font-black text-slate-700 dark:text-slate-200 leading-none">{countSakit}</span></div>
                                 <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800 flex flex-col items-center justify-center"><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider mb-1">Izin</span><span className="text-xl font-black text-slate-700 dark:text-slate-200 leading-none">{countIzin}</span></div>
@@ -421,14 +540,14 @@ function DashboardKelas({ kelasId }) {
                     <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => setIsNewsModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
                             <div className="w-10 h-10 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-orange-100 dark:border-orange-800"><Newspaper size={20} /></div>
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Mading</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Mading {(isGuru || isAdmin) && '(Post)'}</span>
                         </button>
                         <button onClick={() => setIsGaleriModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
                             <div className="w-10 h-10 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-purple-100 dark:border-purple-800"><ImageIcon size={20} /></div>
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Galeri</span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Galeri {(isGuru || isAdmin) && '(Upload)'}</span>
                         </button>
                         <button onClick={() => setIsAiModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-yellow-400 dark:hover:border-yellow-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group"><div className="w-10 h-10 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-yellow-100 dark:border-yellow-800"><Bot size={20} /></div><span className="text-xs font-bold text-slate-700 dark:text-slate-200">AI Chat</span></button>
-                        <button onClick={() => setIsPdfModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-red-400 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group"><div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-red-100 dark:border-red-800"><FileSpreadsheet size={20} /></div><span className="text-xs font-bold text-slate-700 dark:text-slate-200">PDF Tools</span></button>
+                        <button onClick={() => isGuru ? setIsPdfModalOpen(true) : triggerToast("Hanya Guru/Admin", "error")} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-red-400 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group"><div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-red-100 dark:border-red-800"><FileSpreadsheet size={20} /></div><span className="text-xs font-bold text-slate-700 dark:text-slate-200">PDF Tools {isGuru && '(Guru/Admin)'}</span></button>
                     </div>
                     {/* STRUKTUR KELAS */}
                     <button onClick={() => setIsStrukturModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-teal-400 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
@@ -438,7 +557,7 @@ function DashboardKelas({ kelasId }) {
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Struktur</span>
                     </button>
                     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 border-t-4 border-orange-500 dark:border-orange-600">
-                        <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 rounded-t-lg"><h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2"><UserCheck size={16} className="text-orange-500" /> Piket {kelasId}</h3>{isAdmin && !isLibur && <button onClick={openPiketModal} className="text-slate-400 hover:text-orange-500 transition-colors bg-slate-50 dark:bg-slate-700 p-1 rounded"><Edit3 size={14} /></button>}</div>
+                        <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 rounded-t-lg"><h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2"><UserCheck size={16} className="text-orange-500" /> Piket {kelasId}</h3>{(isAdmin || isGuru) && !isLibur && <button onClick={openPiketModal} className="text-slate-400 hover:text-orange-500 transition-colors bg-slate-50 dark:bg-slate-700 p-1 rounded"><Edit3 size={14} /></button>}</div>
                         <div className="p-5 text-center min-h-[100px] flex items-center justify-center flex-col bg-slate-50/50 dark:bg-slate-900/50">{isLibur ? <span className="text-xs text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-3 py-1 rounded-full border border-orange-100 dark:border-orange-800">Sekolah Libur</span> : piketTampil ? <div className="flex flex-wrap gap-2 justify-center">{piketTampil.names.map((n, i) => <span key={i} className="bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs font-bold px-3 py-1.5 rounded border border-slate-200 dark:border-slate-600 shadow-sm">{n}</span>)}</div> : <span className="text-xs text-slate-400 italic">Belum ada data.</span>}</div>
                     </div>
                 </div>
@@ -482,8 +601,8 @@ function DashboardKelas({ kelasId }) {
                     )}
                     
                     {/* Jika Countdown kosong tapi Admin login, tampilkan tombol tambah shortcut */}
-                    {!countdownData.targetDate && isAdmin && (
-                         <div onClick={() => { setIsSettingsModalOpen(true); setSettingTab('countdown'); }} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-[#002f6c] transition-colors group">
+                    {!countdownData.targetDate && (isAdmin || isGuru) && (
+                         <div onClick={() => { if(isAdmin || isGuru) { setIsSettingsModalOpen(true); setSettingTab('countdown'); } else { triggerToast("Akses Ditolak", "error"); }}} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-[#002f6c] transition-colors group">
                             <Clock size={24} className="mx-auto text-slate-400 group-hover:text-[#002f6c] mb-2"/>
                             <p className="text-sm font-bold text-slate-500 group-hover:text-[#002f6c]">Setup Hitung Mundur</p>
                          </div>
@@ -492,7 +611,7 @@ function DashboardKelas({ kelasId }) {
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 border-t-4 border-[#002f6c] dark:border-blue-500">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                             <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-[#002f6c] dark:text-blue-400 shadow-md"><BookOpen size={20} /></div><div><h2 className="font-bold text-lg text-slate-800 dark:text-slate-200">Jadwal Pelajaran</h2><p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[#002f6c] dark:text-blue-400">{hariPilihan}</p></div></div>
-                            <div className="flex gap-1 overflow-x-auto pb-1 md:pb-0 w-full md:w-auto no-scrollbar">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map(h => (<button key={h} onClick={() => setHariPilihan(h)} className={`px-4 py-1.5 rounded text-[10px] font-bold transition-all border-b-2 ${hariPilihan === h ? 'border-[#002f6c] dark:border-blue-500 text-[#002f6c] dark:text-blue-400 bg-blue-50 dark:bg-slate-700' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-700'}`}>{h}</button>))}{isAdmin && !isLibur && <button onClick={openScheduleModal} className="px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-500 rounded hover:bg-slate-200 transition-colors"><Edit3 size={12} /></button>}</div>
+                            <div className="flex gap-1 overflow-x-auto pb-1 md:pb-0 w-full md:w-auto no-scrollbar">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map(h => (<button key={h} onClick={() => setHariPilihan(h)} className={`px-4 py-1.5 rounded text-[10px] font-bold transition-all border-b-2 ${hariPilihan === h ? 'border-[#002f6c] dark:border-blue-500 text-[#002f6c] dark:text-blue-400 bg-blue-50 dark:bg-slate-700' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-700'}`}>{h}</button>))}{(isAdmin || isGuru) && !isLibur && <button onClick={openScheduleModal} className="px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-500 rounded hover:bg-slate-200 transition-colors"><Edit3 size={12} /></button>}</div>
                         </div>
                         <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700"><div className="grid grid-cols-2 md:grid-cols-3 gap-3">{isLibur ? <div className="col-span-full py-10 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-lg border border-dashed border-slate-200 dark:border-slate-600"><Coffee size={32} className="mx-auto mb-2 opacity-50" /><p className="text-xs">Tidak ada KBM.</p></div> : loadingJadwal ? <p className="text-xs text-slate-400 text-center py-4">Loading...</p> : jadwalTampil ? jadwalTampil.mapel.map((m, i) => (<div key={i} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-sm hover:shadow-md transition-all hover:border-blue-300"><span className="w-6 h-6 rounded bg-blue-50 dark:bg-blue-900/20 text-[#002f6c] dark:text-blue-400 flex items-center justify-center text-[10px] font-bold border border-blue-100 dark:border-blue-800">{i + 1}</span><span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{m}</span></div>)) : <div className="col-span-full py-6 text-center text-slate-400 italic text-xs">Jadwal belum diatur.</div>}</div></div>
                     </div>
@@ -504,8 +623,8 @@ function DashboardKelas({ kelasId }) {
                         {isAdmin && <button onClick={() => setIsQuoteModalOpen(true)} className="absolute top-3 right-3 text-slate-300 hover:text-[#00994d] transition-colors"><Edit3 size={14} /></button>}
                     </div>
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border-t-4 border-purple-600 dark:border-purple-500 border border-slate-200 dark:border-slate-700">
-                        <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded shadow-sm"><CheckSquare size={20} /></div><h3 className="font-bold text-slate-800 dark:text-slate-200 text-base">Agenda & Tugas {kelasId}</h3></div>{isAdmin && <button onClick={() => setIsTaskModalOpen(true)} className="bg-[#002f6c] hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-md transition-colors"><Plus size={14} /> Tambah</button>}</div>
-                        <div className="space-y-2">{!loadingTugas && daftarTugas.length === 0 && <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 dark:bg-slate-900 rounded border border-dashed border-slate-200 dark:border-slate-700">Tidak ada tugas aktif. Aman!</div>}{daftarTugas.map(t => (<div key={t.id} onClick={() => isAdmin && handleToggleTask(t.id, t.selesai)} className={`p-3 rounded-lg border-l-4 flex items-center justify-between transition-all cursor-pointer ${t.selesai ? 'bg-slate-50 dark:bg-slate-900 border-l-slate-300 dark:border-l-slate-600 border-t border-r border-b border-slate-200 dark:border-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border-l-purple-500 dark:border-l-purple-400 border-t border-r border-b border-slate-200 dark:border-slate-600 shadow-sm hover:shadow-md'} ${!isAdmin ? 'cursor-default' : ''}`}><div className="flex items-center gap-3"><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.selesai ? 'bg-[#00994d] border-[#00994d]' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'}`}>{t.selesai && <CheckSquare size={10} className="text-white" />}</div><div><h4 className={`font-bold text-xs md:text-sm ${t.selesai ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>{t.judul}</h4><span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium px-2 py-0.5 bg-slate-100 dark:bg-slate-900/50 rounded mt-1 inline-block border border-slate-200 dark:border-slate-600">{t.mapel}</span></div></div>{isAdmin && <button onClick={(e) => handleDeleteTask(e, t.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14} /></button>}</div>))}</div>
+                        <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded shadow-sm"><CheckSquare size={20} /></div><h3 className="font-bold text-slate-800 dark:text-slate-200 text-base">Agenda & Tugas {kelasId}</h3></div>{(isAdmin || isGuru) && <button onClick={() => setIsTaskModalOpen(true)} className="bg-[#002f6c] hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-md transition-colors"><Plus size={14} /> Tambah</button>}</div>
+                        <div className="space-y-2">{!loadingTugas && daftarTugas.length === 0 && <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 dark:bg-slate-900 rounded border border-dashed border-slate-200 dark:border-slate-700">Tidak ada tugas aktif. Aman!</div>}{daftarTugas.map(t => (<div key={t.id} onClick={() => (isAdmin || isGuru) && handleToggleTask(t.id, t.selesai)} className={`p-3 rounded-lg border-l-4 flex items-center justify-between transition-all ${t.selesai ? 'bg-slate-50 dark:bg-slate-900 border-l-slate-300 dark:border-l-slate-600 border-t border-r border-b border-slate-200 dark:border-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border-l-purple-500 dark:border-l-purple-400 border-t border-r border-b border-slate-200 dark:border-slate-600 shadow-sm hover:shadow-md'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}><div className="flex items-center gap-3"><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.selesai ? 'bg-[#00994d] border-[#00994d]' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'}`}>{t.selesai && <CheckSquare size={10} className="text-white" />}</div><div><h4 className={`font-bold text-xs md:text-sm ${t.selesai ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>{t.judul}</h4><span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium px-2 py-0.5 bg-slate-100 dark:bg-slate-900/50 rounded mt-1 inline-block border border-slate-200 dark:border-slate-600">{t.mapel}</span></div></div>{(isAdmin || isGuru) && <button onClick={(e) => handleDeleteTask(e, t.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14} /></button>}</div>))}</div>
                     </div>
                 </div>
             </div>
@@ -513,19 +632,23 @@ function DashboardKelas({ kelasId }) {
             <footer className="text-center py-8 text-slate-400 text-xs bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 mt-8 shadow-inner"><p className="font-medium">SMK Muhammadiyah 1 Metro • © 2025 Rafiantara</p></footer>
 
             {/* ALL MODALS */}
-            <Modal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} title="Admin Access"><form onSubmit={handleLogin} className="space-y-4"><div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-600"><Lock size={24} className="text-slate-400 mx-auto mb-2" /><p className="text-xs text-slate-500 dark:text-slate-400">Masukkan PIN Keamanan</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-center text-slate-800 dark:text-white tracking-[8px] text-lg focus:outline-none focus:border-[#002f6c] dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-100" placeholder="••••" autoFocus maxLength={6} /><button className="w-full bg-[#002f6c] hover:bg-blue-800 text-white py-2.5 rounded-lg font-bold shadow-sm transition-all text-sm">Masuk Dashboard</button></form></Modal>
+            {/* LOGIN/GATE MODAL */}
+            <Modal isOpen={isLoginModalOpen} onClose={() => { if(currentRole === ROLES.GUEST) navigate('/'); setIsLoginModalOpen(false) }} title="Gerbang Akses Dashboard"><form onSubmit={handleLogin} className="space-y-4"><div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-600"><Lock size={24} className="text-slate-400 mx-auto mb-2" /><p className="text-xs text-slate-500 dark:text-slate-400">Masukkan PIN Akses</p><p className="text-[10px] text-blue-500 mt-1">Siswa: siswatkj | Guru: guruku | Admin: daus</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-center text-slate-800 dark:text-white tracking-[8px] text-lg focus:outline-none focus:border-[#002f6c] dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-100" placeholder="••••" autoFocus maxLength={8} /><button className="w-full bg-[#002f6c] hover:bg-blue-800 text-white py-2.5 rounded-lg font-bold shadow-sm transition-all text-sm">Masuk Dashboard</button></form></Modal>
 
             {/* SETTINGS MODAL */}
             <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Konfigurasi">
                 
                     <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
-                        <button type="button" onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'ai' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>AI & API</button>
-                        <button type="button" onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'kas' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Data Kelas</button>
-                        <button type="button" onClick={() => setSettingTab('countdown')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'countdown' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Countdown</button>
+                        {/* Tab AI hanya untuk Admin */}
+                        {isAdmin && (<button type="button" onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'ai' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>AI & API</button>)}
+                        {/* Tab Data Kelas untuk Guru/Admin */}
+                        {(isAdmin || isGuru) && (<button type="button" onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'kas' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Data Kelas</button>)}
+                        {/* Tab Countdown untuk Guru/Admin */}
+                        {(isAdmin || isGuru) && (<button type="button" onClick={() => setSettingTab('countdown')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'countdown' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Countdown</button>)}
                     </div>
 
-                    {/* TAB: AI & API */}
-                    {settingTab === 'ai' && (
+                    {/* TAB: AI & API (HANYA ADMIN) */}
+                    {settingTab === 'ai' && isAdmin && (
                         <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-300 mb-1">Gemini API Key</label>
@@ -551,8 +674,8 @@ function DashboardKelas({ kelasId }) {
                         </form>
                     )}
 
-                    {/* TAB: DATA KELAS */}
-                    {settingTab === 'kas' && (
+                    {/* TAB: DATA KELAS (GURU/ADMIN) */}
+                    {settingTab === 'kas' && (isAdmin || isGuru) && (
                         <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
                             <div><label className="block text-xs font-bold text-slate-500 mb-1">Saldo Awal (Rp)</label><input type="number" value={saldoAwal} onChange={e => setSaldoAwal(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-800 text-xs outline-none" /></div>
                             <div className="border-t border-slate-200 pt-3"><label className="block text-xs font-bold text-slate-500 mb-2">Siswa</label><div className="flex gap-2 mb-2"><input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-xs outline-none" placeholder="Nama..." /><button type="button" onClick={handleAddStudent} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Plus size={14} /></button></div><div className="max-h-[100px] overflow-y-auto custom-scrollbar space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-200">{loadingStudents ? <p className="text-xs text-slate-400">Loading...</p> : dataStudents.sort((a, b) => a.name.localeCompare(b.name)).map(s => (<div key={s.id} className="flex justify-between items-center p-1.5 bg-white rounded border border-slate-100"><span className="text-xs font-medium text-slate-700">{s.name}</span><button type="button" onClick={() => handleDeleteStudent(s.id)} className="text-red-400 hover:text-red-600"><X size={12} /></button></div>))}</div></div>
@@ -560,8 +683,8 @@ function DashboardKelas({ kelasId }) {
                         </form>
                     )}
 
-                    {/* TAB: COUNTDOWN */}
-                    {settingTab === 'countdown' && (
+                    {/* TAB: COUNTDOWN (GURU/ADMIN) */}
+                    {settingTab === 'countdown' && (isAdmin || isGuru) && (
                          <div className="space-y-6 animate-in fade-in overflow-y-auto max-h-[60vh] custom-scrollbar pr-1">
                             {/* BAGIAN 1: DASHBOARD */}
                             <form onSubmit={handleSaveCountdown} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
@@ -635,10 +758,10 @@ function DashboardKelas({ kelasId }) {
                     )}
             </Modal>
 
-            {/* Modal Sisa (Kas, News, Galeri, dll - SAMA SEPERTI SEBELUMNYA) */}
-            <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title={`Kas ${kelasId}`}><div className="space-y-4"><div className="bg-[#00994d] p-4 rounded-lg shadow-md text-center text-white"><p className="text-green-100 text-xs font-medium uppercase tracking-wider mb-1">Saldo Kas</p><h2 className="text-3xl font-bold">{formatRupiah(totalSaldoAkhir)}</h2></div><div className="flex bg-slate-100 p-1 rounded-lg mb-2"><button onClick={() => setKasTab('laporan')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'laporan' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Laporan</button>{isAdmin && <button onClick={() => setKasTab('input')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'input' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Input</button>}</div>{kasTab === 'laporan' && (<div className="space-y-3 animate-in fade-in"><div className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200"><select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>Bln {m}</option>)}</select><select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select><button onClick={handleExportExcel} className="text-[10px] bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-green-700"><FileSpreadsheet size={12} /></button></div><div className="max-h-[250px] overflow-y-auto custom-scrollbar space-y-2">{transactionsInPeriod.length === 0 ? <p className="text-center text-xs text-slate-400 py-6">Kosong.</p> : transactionsInPeriod.map((item) => (<div key={item.id} className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-100 shadow-sm"><div className="flex items-center gap-2"><div className={`p-1.5 rounded-full ${item.tipe === 'masuk' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{item.tipe === 'masuk' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}</div><div><p className="text-xs font-bold text-slate-700">{item.nama}</p><p className="text-[10px] text-slate-400">{item.tanggal}</p></div></div><div className="text-right"><p className={`text-xs font-bold ${item.tipe === 'masuk' ? 'text-green-600' : 'text-red-600'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>{isAdmin && <button onClick={() => handleDeleteKas(item.id)} className="text-[9px] text-slate-400 hover:text-red-500">Hapus</button>}</div></div>))}</div></div>)}{kasTab === 'input' && isAdmin && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-in fade-in"><form onSubmit={handleAddKas} className="space-y-3"><div className="grid grid-cols-2 gap-3"><input type="date" value={kasInput.tanggal} onChange={e => setKasInput({ ...kasInput, tanggal: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><select value={kasInput.tipe} onChange={e => setKasInput({ ...kasInput, tipe: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none"><option value="masuk">Masuk (+)</option><option value="keluar">Keluar (-)</option></select></div><div className="flex gap-2"><div className="w-1/3 relative"><input list="students" type="text" value={kasInput.nama} onChange={e => setKasInput({ ...kasInput, nama: e.target.value })} placeholder="Nama" className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><datalist id="students">{dataStudents.map(s => <option key={s.id} value={s.name} />)}</datalist></div><input type="text" value={kasInput.jumlah} onChange={handleJumlahChange} placeholder="Rp" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><input type="text" value={kasInput.keterangan} onChange={e => setKasInput({ ...kasInput, keterangan: e.target.value })} placeholder="Ket" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /></div><div className="border-t border-slate-200 pt-2"><input type="file" ref={buktiInputRef} onChange={handleBuktiChange} accept="image/*" className="hidden" id="buktiUpload" /><div className="flex justify-between items-center"><label htmlFor="buktiUpload" className="text-xs text-blue-600 cursor-pointer flex items-center gap-1 hover:underline font-medium"><ImageIcon size={14} /> {buktiPreview ? "Ganti Foto" : "Upload Bukti"}</label>{buktiPreview && <button type="button" onClick={clearBukti} className="text-red-500"><XCircle size={14} /></button>}</div></div><button className="w-full bg-[#00994d] hover:bg-green-700 text-white py-2.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-2"><Plus size={14} /> Simpan</button></form></div>)}</div></Modal>
+            {/* Modal Sisa (Kas, News, Galeri, dll - Disesuaikan Aksesnya) */}
+            <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title={`Kas ${kelasId}`}><div className="space-y-4"><div className="bg-[#00994d] p-4 rounded-lg shadow-md text-center text-white"><p className="text-green-100 text-xs font-medium uppercase tracking-wider mb-1">Saldo Kas</p><h2 className="text-3xl font-bold">{formatRupiah(totalSaldoAkhir)}</h2></div><div className="flex bg-slate-100 p-1 rounded-lg mb-2"><button onClick={() => setKasTab('laporan')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'laporan' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Laporan</button>{(isAdmin || isGuru) && <button onClick={() => setKasTab('input')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'input' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Input</button>}</div>{kasTab === 'laporan' && (<div className="space-y-3 animate-in fade-in"><div className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200"><select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>Bln {m}</option>)}</select><select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select>{(isAdmin || isGuru) && <button onClick={handleExportExcel} className="text-[10px] bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-green-700"><FileSpreadsheet size={12} /></button>}</div><div className="max-h-[250px] overflow-y-auto custom-scrollbar space-y-2">{transactionsInPeriod.length === 0 ? <p className="text-center text-xs text-slate-400 py-6">Kosong.</p> : transactionsInPeriod.map((item) => (<div key={item.id} className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-100 shadow-sm"><div className="flex items-center gap-2"><div className={`p-1.5 rounded-full ${item.tipe === 'masuk' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{item.tipe === 'masuk' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}</div><div><p className="text-xs font-bold text-slate-700">{item.nama}</p><p className="text-[10px] text-slate-400">{item.tanggal}</p></div></div><div className="text-right"><p className={`text-xs font-bold ${item.tipe === 'masuk' ? 'text-green-600' : 'text-red-600'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>{(isAdmin || isGuru) && <button onClick={() => handleDeleteKas(item.id)} className="text-[9px] text-slate-400 hover:text-red-500">Hapus</button>}</div></div>))}</div></div>)}{kasTab === 'input' && (isAdmin || isGuru) && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-in fade-in"><form onSubmit={handleAddKas} className="space-y-3"><div className="grid grid-cols-2 gap-3"><input type="date" value={kasInput.tanggal} onChange={e => setKasInput({ ...kasInput, tanggal: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><select value={kasInput.tipe} onChange={e => setKasInput({ ...kasInput, tipe: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none"><option value="masuk">Masuk (+)</option><option value="keluar">Keluar (-)</option></select></div><div className="flex gap-2"><div className="w-1/3 relative"><input list="students" type="text" value={kasInput.nama} onChange={e => setKasInput({ ...kasInput, nama: e.target.value })} placeholder="Nama" className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><datalist id="students">{dataStudents.map(s => <option key={s.id} value={s.name} />)}</datalist></div><input type="text" value={kasInput.jumlah} onChange={handleJumlahChange} placeholder="Rp" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><input type="text" value={kasInput.keterangan} onChange={e => setKasInput({ ...kasInput, keterangan: e.target.value })} placeholder="Ket" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /></div><div className="border-t border-slate-200 pt-2"><input type="file" ref={buktiInputRef} onChange={handleBuktiChange} accept="image/*" className="hidden" id="buktiUpload" /><div className="flex justify-between items-center"><label htmlFor="buktiUpload" className="text-xs text-blue-600 cursor-pointer flex items-center gap-1 hover:underline font-medium"><ImageIcon size={14} /> {buktiPreview ? "Ganti Foto" : "Upload Bukti"}</label>{buktiPreview && <button type="button" onClick={clearBukti} className="text-red-500"><XCircle size={14} /></button>}</div></div><button className="w-full bg-[#00994d] hover:bg-green-700 text-white py-2.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-2"><Plus size={14} /> Simpan</button></form></div>)}</div></Modal>
             <Modal isOpen={isNewsModalOpen} onClose={() => setIsNewsModalOpen(false)} title="Post Berita/Karya">
-                {isAdmin ? (
+                {(isAdmin || isGuru) ? (
                     <form onSubmit={handlePostNews} className="space-y-4 animate-in fade-in">
                         <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg border border-orange-200 dark:border-orange-800 mb-2 text-[11px] text-orange-800 dark:text-orange-300 flex gap-2">
                             <AlertCircle size={14} className="shrink-0 mt-0.5" />
@@ -661,13 +784,13 @@ function DashboardKelas({ kelasId }) {
                 ) : (
                     <div className="text-center py-10 text-slate-400">
                         <Lock size={40} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Hanya Admin yang boleh posting berita.</p>
-                        <button onClick={() => { setIsNewsModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Login Admin Dulu</button>
+                        <p className="text-sm">Hanya Guru/Admin yang boleh posting berita.</p>
+                        <button onClick={() => { setIsNewsModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Masuk Role Berhak</button>
                     </div>
                 )}
             </Modal>
             <Modal isOpen={isGaleriModalOpen} onClose={() => setIsGaleriModalOpen(false)} title="Upload Galeri">
-                {isAdmin ? (
+                {(isAdmin || isGuru) ? (
                     <form onSubmit={handlePostGaleri} className="space-y-4 animate-in fade-in">
                         <div className="bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-200 dark:border-purple-800 mb-2 text-[11px] text-purple-800 dark:text-purple-300 flex gap-2">
                             <AlertCircle size={14} className="shrink-0 mt-0.5" />
@@ -687,8 +810,8 @@ function DashboardKelas({ kelasId }) {
                 ) : (
                     <div className="text-center py-10 text-slate-400">
                         <Lock size={40} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Login Admin dulu wak buat upload foto.</p>
-                        <button onClick={() => { setIsGaleriModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Login Disini</button>
+                        <p className="text-sm">Login Guru/Admin dulu wak buat upload foto.</p>
+                        <button onClick={() => { setIsGaleriModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Masuk Role Berhak</button>
                     </div>
                 )}
             </Modal>
@@ -696,12 +819,21 @@ function DashboardKelas({ kelasId }) {
             <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Edit Jadwal"><form onSubmit={handleSaveSchedule} className="space-y-4"><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-emerald-500" placeholder="Mapel pisah koma..." /><button className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-green-700">Update</button></form></Modal>
             <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast Info"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-emerald-500" /><button className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700">Kirim</button></form></Modal>
             <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-500 text-xs mb-2">Pisahkan koma (Cth: Budi, Andi)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-orange-500" placeholder="Nama siswa..." /><button className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600">Simpan Piket</button></form></Modal>
-            <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes"><div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-100"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-white border-slate-300 rounded-lg p-2.5 text-slate-800 text-sm focus:border-blue-500 outline-none" placeholder="Kata mutiara..." /><button className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Tambah</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-400">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-400 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group"><div><p className="text-sm text-slate-700 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-400">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div></Modal>
+            <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes">
+                {isAdmin ? (
+                    <div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-100"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-white border-slate-300 rounded-lg p-2.5 text-slate-800 text-sm focus:border-blue-500 outline-none" placeholder="Kata mutiara..." /><button className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Tambah</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-400">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-400 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group"><div><p className="text-sm text-slate-700 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-400">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div>
+                ) : (
+                     <div className="text-center py-10 text-slate-400">
+                        <Lock size={40} className="mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">Hanya Admin yang boleh mengelola quotes.</p>
+                     </div>
+                )}
+            </Modal>
             <Modal isOpen={isAbsenModalOpen} onClose={() => setIsAbsenModalOpen(false)} title="Data Absensi">
                 <div className="space-y-4">
                     <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
                         <button onClick={() => setAbsenTab('view')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'view' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Eye size={14} /> Lihat Data</button>
-                        {isAdmin && (<button onClick={() => setAbsenTab('input')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'input' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Edit3 size={14} /> Input Absensi</button>)}
+                        {(isAdmin || isGuru) && (<button onClick={() => setAbsenTab('input')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'input' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Edit3 size={14} /> Input Absensi</button>)}
                     </div>
                     {absenTab === 'view' && (
                         <div className="space-y-4 animate-in fade-in">
@@ -726,7 +858,7 @@ function DashboardKelas({ kelasId }) {
                             </div>
                         </div>
                     )}
-                    {absenTab === 'input' && isAdmin && (
+                    {absenTab === 'input' && (isAdmin || isGuru) && (
                         <form onSubmit={handleSaveAbsensi} className="space-y-4 animate-in fade-in">
                             <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-lg border border-slate-200 dark:border-slate-600 text-[11px] text-slate-500 dark:text-slate-300 mb-2 flex items-start gap-2">
                                 <AlertCircle size={14} className="shrink-0 mt-0.5 text-blue-500" />
