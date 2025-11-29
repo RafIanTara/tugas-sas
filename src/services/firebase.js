@@ -2,9 +2,10 @@ import { initializeApp } from "firebase/app";
 // PENTING: Pakai initializeFirestore biar bisa setting long polling
 import { initializeFirestore } from "firebase/firestore"; 
 import { getStorage } from "firebase/storage";
+import { getAuth } from "firebase/auth"; // <--- TAMBAHAN 1
 
 const firebaseConfig = {
-  // --- JANGAN UBAH API KEY INI (PAKE PUNYA KAMU) ---
+  // ... (Config Anda tetap sama, jangan diubah)
   apiKey: "AIzaSyDFJUxguohW_tqPYDhDNeeOFMe9yo2yvUw", 
   authDomain: "web-kelas-sas.firebaseapp.com", 
   projectId: "web-kelas-sas", 
@@ -17,11 +18,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // --- OBAT KUAT KONEKSI ---
-// experimentalForceLongPolling: true -> Ini maksa lewat jalur HTTP biasa (Anti Blokir)
 const db = initializeFirestore(app, {
     experimentalForceLongPolling: true, 
 });
 
 const storage = getStorage(app);
+const auth = getAuth(app); // <--- TAMBAHAN 2
 
-export { db, storage };
+export { db, storage, auth }; // <--- TAMBAHAN 3 (Export auth)

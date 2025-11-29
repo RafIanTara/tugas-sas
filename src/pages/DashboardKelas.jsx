@@ -1,36 +1,32 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import logoSekolah from '../assets/images/logosmk.png'
+import { useNavigate, Navigate } from 'react-router-dom'
 import logoJurusan from '../assets/images/logotkj.jpg'
 
-import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter, UserMinus, CheckCircle, AlertCircle, Home, Eye, Users, Moon, Sun, Newspaper, UploadCloud, Brain, Clock, Monitor } from 'lucide-react'
-import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc, increment } from "firebase/firestore"
+// ICONS
+import { BookOpen, CheckSquare, Plus, Trash2, X, Edit3, Megaphone, Calendar, Link, Wifi, Calculator, Zap, Send, Bot, Globe, Lock, Unlock, LogOut, Image as ImageIcon, XCircle, UserCheck, Coffee, Settings, Key, Quote, Wallet, TrendingUp, TrendingDown, FileSpreadsheet, Download, Filter, UserMinus, CheckCircle, AlertCircle, Home, Eye, Users, Moon, Sun, Newspaper, UploadCloud, Brain, Clock, Monitor, Loader2 } from 'lucide-react'
+
+// FIREBASE
+import { collection, doc, updateDoc, addDoc, deleteDoc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"
 import { db } from "../services/firebase"
 import useFirestore from '../hooks/useFirestore'
+
+// AI & UTILS
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from "framer-motion"
 import * as XLSX from 'xlsx'
 
-// --- DEFINISI ROLES ---
-const ROLES = {
-    SISWA: 'SISWA',
-    GURU: 'GURU',
-    ADMIN: 'ADMIN',
-    GUEST: 'GUEST'
-}
-
-const PIN_MAP = {
-    'siswatkj': ROLES.SISWA,
-    'guruku': ROLES.GURU,
-    'daus': ROLES.ADMIN
-}
+// --- NEW AUTH & PERMISSIONS IMPORTS ---
+import { useAuth } from '../context/AuthContext'
+import { canAccess } from '../utils/permissions'
+import ApprovalList from '../components/ApprovalList'
 
 const DEFAULT_QUOTES = [
     { text: "Hidup hidupilah Muhammadiyah, jangan mencari hidup di Muhammadiyah.", author: "KH. Ahmad Dahlan" },
     { text: "Pendidikan adalah senjata paling mematikan untuk mengubah dunia.", author: "Nelson Mandela" }
 ]
 
+// --- SUB-COMPONENTS (MODAL & TOAST) ---
 const Modal = ({ isOpen, onClose, title, children }) => {
     if (!isOpen) return null
     return (
@@ -56,30 +52,30 @@ const Toast = ({ message, type, onClose }) => {
     )
 }
 
+// ===============================================
+// MAIN COMPONENT: DASHBOARD KELAS
+// ===============================================
 function DashboardKelas({ kelasId }) {
     const navigate = useNavigate()
+    
+    // 1. INTEGRASI AUTH CONTEXT
+    const { user, logout, loading: authLoading } = useAuth() 
     const dbPrefix = kelasId.toLowerCase() + '_';
 
-    // --- STATE UTAMA UNTUK OTORISASI ---
-    const [currentRole, setCurrentRole] = useState(() => localStorage.getItem('tkj_user_role') || ROLES.GUEST)
-    const isAdmin = currentRole === ROLES.ADMIN
-    const isGuru = currentRole === ROLES.GURU || isAdmin // Guru includes Admin access for most features
-    const isReadOnly = currentRole === ROLES.SISWA || currentRole === ROLES.GUEST
-    // ------------------------------------
-
+    // THEME STATE
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
     useEffect(() => { if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark') } else { document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light') } }, [isDarkMode])
 
+    // BASIC STATE
     const [time, setTime] = useState(new Date())
     const namaHariIni = new Date().toLocaleDateString('id-ID', { weekday: 'long' })
     const [hariPilihan, setHariPilihan] = useState(namaHariIni)
     const [quote, setQuote] = useState(DEFAULT_QUOTES[0])
     const [newQuoteText, setNewQuoteText] = useState('')
     const [toast, setToast] = useState(null)
-    
-    // Modals
+
+    // MODAL STATES
     const [isStrukturModalOpen, setIsStrukturModalOpen] = useState(false)
-    const [isLoginModalOpen, setIsLoginModalOpen] = useState(true) // <-- SET TRUE AGAR MODAL PIN MUNCUL PERTAMA
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
     const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
@@ -92,22 +88,23 @@ function DashboardKelas({ kelasId }) {
     const [isAbsenModalOpen, setIsAbsenModalOpen] = useState(false)
     const [isNewsModalOpen, setIsNewsModalOpen] = useState(false)
     const [isGaleriModalOpen, setIsGaleriModalOpen] = useState(false)
+    const [isCountdownModalOpen, setIsCountdownModalOpen] = useState(false) // MODAL BARU UNTUK EDIT COUNTDOWN
     
-    // Inputs
-    const [pinInput, setPinInput] = useState('')
-    const [settingTab, setSettingTab] = useState('ai') // Default tab setting
-
-    // --- SETTING AI ---
+    // INPUT STATES
+    const [settingTab, setSettingTab] = useState('ai')
+    
+    // AI SETTINGS
     const [apiKeyInput, setApiKeyInput] = useState('')
     const [isApiKeySet, setIsApiKeySet] = useState(false)
     const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash')
     const [guestAiContext, setGuestAiContext] = useState('')
 
-    // --- STATE COUNTDOWN (DASHBOARD & LANDING) ---
+    // COUNTDOWN STATES
     const [countdownData, setCountdownData] = useState({ title: '', targetDate: '' })
-    const [landingCountdownData, setLandingCountdownData] = useState({ title: '', targetDate: '' }) // State baru untuk Landing Page
+    const [landingCountdownData, setLandingCountdownData] = useState({ title: '', targetDate: '' }) 
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
 
+    // DATA INPUT STATES (Kas, Tugas, dll)
     const [saldoAwal, setSaldoAwal] = useState(0)
     const [newStudentName, setNewStudentName] = useState('')
     const [nominalKas, setNominalKas] = useState(2000)
@@ -121,30 +118,42 @@ function DashboardKelas({ kelasId }) {
     const [kasInput, setKasInput] = useState({ tanggal: new Date().toISOString().split('T')[0], nama: '', jumlah: '', tipe: 'masuk', keterangan: '' })
     const [buktiFile, setBuktiFile] = useState(null)
     const [buktiPreview, setBuktiPreview] = useState(null)
-
-    // State Berita & Galeri
     const [newsInput, setNewsInput] = useState({ title: '', category: 'Kegiatan', content: '', imageBase64: '' })
     const [newsImagePreview, setNewsImagePreview] = useState(null)
-    const newsFileInputRef = useRef(null)
-
     const [galeriInput, setGaleriInput] = useState({ caption: '', imageBase64: '' })
     const [galeriImagePreview, setGaleriImagePreview] = useState(null)
-    const galeriFileInputRef = useRef(null)
-
     const [pdfImages, setPdfImages] = useState([])
-    const buktiInputRef = useRef(null)
-    const currentWeek = Math.ceil(new Date().getDate() / 7);
     const [filterBulan, setFilterBulan] = useState(new Date().getMonth() + 1)
     const [filterTahun, setFilterTahun] = useState(new Date().getFullYear())
 
+    // --- STATE STRUKTUR ORGANISASI (BARU) ---
+    const [strukturData, setStrukturData] = useState({
+        kajur: '-', wali_kelas: '-', ketua: '-', wakil: '-', sekretaris: '-', bendahara: '-'
+    })
+    const [isEditingStruktur, setIsEditingStruktur] = useState(false)
+
+    // CHAT STATES
     const [chatInput, setChatInput] = useState('')
-    const [chatHistory, setChatHistory] = useState([{ role: 'model', text: 'Assalamualaikum Wak! Gue Asisten AI TKJ nih. Ada yang bisa gue bantu? Spill aja!' }])
+    // Chat History Initial dengan nama User yang login
+    const [chatHistory, setChatHistory] = useState([])
+    useEffect(() => {
+        if(user) {
+            setChatHistory([{ role: 'model', text: `Assalamualaikum ${user.displayName || 'Wak'}! Gue Asisten AI TKJ nih. Ada yang bisa gue bantu? Spill aja!` }])
+        }
+    }, [user])
+
     const [isTyping, setIsTyping] = useState(false)
     const [imageFile, setImageFile] = useState(null)
     const [imagePreview, setImagePreview] = useState(null)
+
+    // REFS
+    const newsFileInputRef = useRef(null)
+    const galeriFileInputRef = useRef(null)
+    const buktiInputRef = useRef(null)
     const fileInputRef = useRef(null)
     const chatEndRef = useRef(null)
 
+    // FIRESTORE HOOKS
     const { data: daftarTugas, loading: loadingTugas } = useFirestore(`${dbPrefix}tugas`)
     const { data: dataJadwal, loading: loadingJadwal } = useFirestore(`${dbPrefix}jadwal`)
     const { data: dataPiket, loading: loadingPiket } = useFirestore(`${dbPrefix}piket`)
@@ -154,6 +163,7 @@ function DashboardKelas({ kelasId }) {
     const { data: dataInfo } = useFirestore('pengumuman')
     const { data: dataQuotes, loading: loadingQuotes } = useFirestore('quotes')
 
+    // DERIVED DATA
     const jadwalTampil = dataJadwal.find(j => j.id === hariPilihan)
     const piketTampil = dataPiket.find(p => p.id === hariPilihan)
     const absenHariIni = dataAbsensi.find(a => a.id === 'harian') || { sakit: '-', izin: '-', alpha: '-' }
@@ -168,12 +178,81 @@ function DashboardKelas({ kelasId }) {
     const transactionsInPeriod = dataKas.filter(item => { if (!item.tanggal) return false; const date = new Date(item.tanggal); return (date.getMonth() + 1) === parseInt(filterBulan) && date.getFullYear() === parseInt(filterTahun); }).sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
     const isLibur = hariPilihan === 'Sabtu' || hariPilihan === 'Minggu';
 
-    const triggerToast = (msg, type = 'success') => { setToast({ message: msg, type }); setTimeout(() => setToast(null), 3000); }
-    const handleJumlahChange = (e) => { let r = e.target.value.replace(/[^0-9]/g, ''); setKasInput({ ...kasInput, jumlah: r ? parseInt(r).toLocaleString('id-ID') : '' }); }
-    const clearBukti = () => { setBuktiFile(null); setBuktiPreview(null); if (buktiInputRef.current) buktiInputRef.current.value = ''; }
+    // --- PROTECTED ROUTE CHECK ---
+    if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white"><Loader2 className="animate-spin mr-2"/> Memuat Data User...</div>
+    if (!user) return <Navigate to="/login" replace />
 
+    // --- PERMISSION CHECKS (NEW) ---
+    const canManageKas = canAccess(user, 'MANAGE_KAS');
+    const canInputAbsen = canAccess(user, 'INPUT_ABSEN');
+    const canPostNews = canAccess(user, 'POST_NEWS');
+    const canUploadGaleri = canAccess(user, 'UPLOAD_GALERI');
+    const canManageTugas = canAccess(user, 'MANAGE_TUGAS');
+    const canManageUsers = canAccess(user, 'MANAGE_USERS'); // Untuk Struktur & Piket
+    const canManagePiket = canAccess(user, 'MANAGE_USERS'); 
+    const canEditSchedule = canAccess(user, 'MANAGE_USERS'); 
+    const canBroadcastInfo = canAccess(user, 'POST_NEWS');
+    const canViewClassSettings = canAccess(user, 'VIEW_SETTINGS_CLASS');
+    const canViewAllSettings = canAccess(user, 'VIEW_SETTINGS_ALL');
+    const canApproveUser = canAccess(user, 'APPROVE_SISWA') || canAccess(user, 'APPROVE_GURU');
+
+    // --- EFFECTS ---
+    // Update Chat History with User Name
+    useEffect(() => {
+        if(user) {
+            setChatHistory([{ role: 'model', text: `Assalamualaikum ${user.displayName || 'Wak'}! Gue Asisten AI TKJ nih. Ada yang bisa gue bantu? Spill aja!` }])
+        }
+    }, [user])
+
+    // Fetch Struktur Data
+    useEffect(() => {
+        if (isStrukturModalOpen) {
+            const fetchStruktur = async () => {
+                try {
+                    const docRef = doc(db, 'struktur_kelas', kelasId);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) setStrukturData(docSnap.data());
+                } catch (e) { console.log("Data struktur belum ada"); }
+            }
+            fetchStruktur();
+        }
+    }, [isStrukturModalOpen, kelasId]);
+
+    // Fetch Configs
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const aiSnap = await getDoc(doc(db, 'settings', 'ai_config'));
+                if (aiSnap.exists()) { if(aiSnap.data().apiKey) setIsApiKeySet(true); if (aiSnap.data().model) setSelectedModel(aiSnap.data().model); if (aiSnap.data().guest_context) setGuestAiContext(aiSnap.data().guest_context); }
+                
+                // Fetch Countdown Dashboard
+                const cdSnap = await getDoc(doc(db, 'settings', 'countdown'));
+                if (cdSnap.exists()) setCountdownData(cdSnap.data());
+                
+                // Fetch Countdown Landing (Biar bisa diedit admin)
+                const landingSnap = await getDoc(doc(db, 'settings', 'landing_countdown'));
+                if (landingSnap.exists()) setLandingCountdownData(landingSnap.data());
+
+                const kasSnap = await getDoc(doc(db, 'settings', `${dbPrefix}kas_config`));
+                if (kasSnap.exists()) { setSaldoAwal(kasSnap.data().saldoAwal || 0); setNominalKas(kasSnap.data().nominal || 2000); }
+            } catch (e) {}
+        };
+        loadConfig();
+        const ci = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(ci);
+    }, [dbPrefix]);
+
+    // Countdown Logic
+    useEffect(() => { if (!countdownData.targetDate) return; const iv = setInterval(() => { const diff = new Date(countdownData.targetDate) - new Date(); if(diff>0) setTimeLeft({ days: Math.floor(diff/(864e5)), hours: Math.floor((diff%864e5)/36e5), minutes: Math.floor((diff%36e5)/6e4), seconds: Math.floor((diff%6e4)/1e3) }); }, 1000); return () => clearInterval(iv); }, [countdownData]);
+
+    // --- EVENT HANDLERS ---
+    const triggerToast = (msg, type = 'success') => { setToast({ message: msg, type }); setTimeout(() => setToast(null), 3000); }
+    const handleLogout = async () => { if (confirm("Yakin keluar?")) { await logout(); navigate('/login'); } }
+    const handleJumlahChange = (e) => { let r = e.target.value.replace(/[^0-9]/g, ''); setKasInput({ ...kasInput, jumlah: r ? parseInt(r).toLocaleString('id-ID') : '' }); }
+
+    // COMPRESS IMAGE
     const compressImage = (file) => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -187,299 +266,92 @@ function DashboardKelas({ kelasId }) {
                     canvas.height = img.height * scaleSize;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                    resolve(dataUrl);
-                }
-            }
+                    resolve(canvas.toDataURL('image/jpeg', 0.6));
+                };
+                img.onerror = (error) => reject(error);
+            };
+            reader.onerror = (error) => reject(error);
         });
+    };
+
+    const handleNewsImageChange = async (e) => { const file = e.target.files[0]; if (file) { try { const b64 = await compressImage(file); setNewsImagePreview(b64); setNewsInput({ ...newsInput, imageBase64: b64 }); } catch { triggerToast("Gagal kompres", "error"); } } }
+    const handleGaleriImageChange = async (e) => { const file = e.target.files[0]; if (file) { try { const b64 = await compressImage(file); setGaleriImagePreview(b64); setGaleriInput({ ...galeriInput, imageBase64: b64 }); } catch { triggerToast("Gagal kompres", "error"); } } }
+    const handleBuktiChange = (e) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setBuktiPreview(r.result); r.readAsDataURL(f); } }
+
+    // --- CRUD OPERATIONS ---
+    const handleSaveStruktur = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'struktur_kelas', kelasId), strukturData);
+            setIsEditingStruktur(false);
+            triggerToast("Struktur Organisasi Diupdate!");
+        } catch (e) { triggerToast("Gagal update", "error"); }
     }
 
-    const handleNewsImageChange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (file.size > 20 * 1024 * 1024) { triggerToast("File kegedean Wak! Max 20MB.", "error"); return; }
-            triggerToast("Mengkompres foto... Tunggu bentar", "success");
-            try {
-                const compressedBase64 = await compressImage(file);
-                setNewsImagePreview(compressedBase64);
-                setNewsInput({ ...newsInput, imageBase64: compressedBase64 });
-            } catch (err) {
-                triggerToast("Gagal kompres foto", "error");
-            }
-        }
-    }
-
-    const handleGaleriImageChange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (file.size > 20 * 1024 * 1024) { triggerToast("File kegedean Wak! Max 20MB.", "error"); return; }
-            triggerToast("Mengkompres foto... Tunggu bentar", "success");
-            try {
-                const compressedBase64 = await compressImage(file);
-                setGaleriImagePreview(compressedBase64);
-                setGaleriInput({ ...galeriInput, imageBase64: compressedBase64 });
-            } catch (err) {
-                triggerToast("Gagal kompres foto", "error");
-            }
-        }
-    }
-
-    // --- LOGIC COUNTDOWN (DASHBOARD) ---
-    useEffect(() => {
-        if (!countdownData.targetDate) return;
-        const interval = setInterval(() => {
-            const now = new Date().getTime();
-            const distance = new Date(countdownData.targetDate).getTime() - now;
-
-            if (distance < 0) {
-                setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-            } else {
-                setTimeLeft({
-                    days: Math.floor(distance / (1000 * 60 * 60 * 24)),
-                    hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-                    minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
-                    seconds: Math.floor((distance % (1000 * 60)) / 1000)
-                });
-            }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [countdownData.targetDate]);
-
-    // FETCH CONFIG (AI, KAS, COUNTDOWN DASHBOARD & LANDING)
-    useEffect(() => {
-        const loadConfig = async () => {
-            try {
-                const aiSnap = await getDoc(doc(db, 'settings', 'ai_config'));
-                if (aiSnap.exists()) {
-                    if (aiSnap.data().model) setSelectedModel(aiSnap.data().model);
-                    if (aiSnap.data().guest_context) setGuestAiContext(aiSnap.data().guest_context);
-                    if (aiSnap.data().apiKey) setIsApiKeySet(true);
-                }
-
-                const kasSnap = await getDoc(doc(db, 'settings', `${dbPrefix}kas_config`));
-                if (kasSnap.exists()) {
-                    setSaldoAwal(kasSnap.data().saldoAwal || 0);
-                    setNominalKas(kasSnap.data().nominal || 2000);
-                }
-
-                // FETCH COUNTDOWN DASHBOARD
-                const cdSnap = await getDoc(doc(db, 'settings', 'countdown'));
-                if (cdSnap.exists()) {
-                    setCountdownData(cdSnap.data());
-                }
-
-                // FETCH COUNTDOWN LANDING PAGE (BARU)
-                const landingCdSnap = await getDoc(doc(db, 'settings', 'landing_countdown'));
-                if (landingCdSnap.exists()) {
-                    setLandingCountdownData(landingCdSnap.data());
-                }
-
-            } catch (e) { }
-        };
-        loadConfig();
-        const storedRole = localStorage.getItem('tkj_user_role');
-        if (storedRole && storedRole !== ROLES.GUEST) {
-            setIsLoginModalOpen(false); // Jika sudah ada role tersimpan, langsung masuk
-        } else {
-            setIsLoginModalOpen(true); // Jika belum ada role, tampilkan modal login
-        }
-        
-        const ci = setInterval(() => { const now = new Date(); setTime(now); }, 1000);
-        return () => clearInterval(ci);
-    }, [dbPrefix])
-
-    // LOGIC CHECK HARI BARU UNTUK ABSENSI
-    useEffect(() => { const c = async () => { try { const t = new Date().toDateString(); const r = doc(db, `${dbPrefix}absensi`, 'harian'); const s = await getDoc(r); if (s.exists()) { const d = s.data(); if (d.lastUpdated?.toDate().toDateString() !== t) { await setDoc(doc(db, `${dbPrefix}absensi_history`, d.lastUpdated.toDate().toISOString().split('T')[0]), { ...d, archivedAt: serverTimestamp() }); await updateDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); window.location.reload(); } } else { await setDoc(r, { sakit: '-', izin: '-', alpha: '-', lastUpdated: serverTimestamp() }); } } catch (e) { } }; c(); }, [dbPrefix]);
-
-    // LOGIC RANDOM QUOTE
-    useEffect(() => { const qi = setInterval(() => { setQuote(p => { if (activeQuotes.length <= 1) return activeQuotes[0]; let r; do { r = Math.floor(Math.random() * activeQuotes.length) } while (activeQuotes[r].text === p.text); return activeQuotes[r]; }) }, 6000); return () => clearInterval(qi) }, [activeQuotes])
+    const handlePostNews = async (e) => { e.preventDefault(); if(!canPostNews) return; await addDoc(collection(db, 'berita_sekolah'), { ...newsInput, image: newsInput.imageBase64 || null, author: user.displayName, createdAt: serverTimestamp(), dateString: new Date().toLocaleDateString('id-ID') }); triggerToast("Berita Diposting"); setIsNewsModalOpen(false); setNewsInput({ title: '', category: 'Kegiatan', content: '', imageBase64: '' }); setNewsImagePreview(null);}
+    const handlePostGaleri = async (e) => { e.preventDefault(); if(!canUploadGaleri) return; await addDoc(collection(db, 'galeri_sekolah'), { ...galeriInput, image: galeriInput.imageBase64, author: user.displayName, createdAt: serverTimestamp() }); triggerToast("Galeri Diupload"); setIsGaleriModalOpen(false); setGaleriInput({ caption: '', imageBase64: '' }); setGaleriImagePreview(null);}
     
-    // SCROLL TO CHAT END
-    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }) }, [chatHistory, isAiModalOpen, imagePreview])
+    const handleAddKas = async (e) => { e.preventDefault(); await addDoc(collection(db, `${dbPrefix}uang_kas`), { ...kasInput, jumlah: parseInt(kasInput.jumlah.replace(/\./g, '')), createdAt: serverTimestamp(), buktiFoto: buktiPreview }); triggerToast("Kas Masuk"); setKasInput({...kasInput, nama: '', jumlah: ''}); setBuktiPreview(null); }
+    const handleDeleteKas = async (id) => { if (confirm("Hapus?")) try { await deleteDoc(doc(db, `${dbPrefix}uang_kas`, id)); triggerToast("Dihapus"); } catch (e) { triggerToast("Gagal hapus", "error") } }
+    
+    const handleSaveAbsensi = async (e) => { e.preventDefault(); await setDoc(doc(db, `${dbPrefix}absensi`, 'harian'), { ...absenInput, lastUpdated: serverTimestamp() }); setIsAbsenModalOpen(false); triggerToast("Absen Updated"); }
+    
+    const handleAddTask = async (e) => { e.preventDefault(); await addDoc(collection(db, `${dbPrefix}tugas`), { ...newTask, selesai: false, createdAt: serverTimestamp() }); setIsTaskModalOpen(false); triggerToast("Tugas Ditambah"); setNewTask({ judul: '', mapel: '' });}
+    const handleToggleTask = async (id, s) => { if(canManageTugas) await updateDoc(doc(db, `${dbPrefix}tugas`, id), { selesai: !s }); }
+    const handleDeleteTask = async (e, id) => { e.stopPropagation(); if(confirm("Hapus?")) await deleteDoc(doc(db, `${dbPrefix}tugas`, id)); }
 
-    // --- FUNGSI OTORISASI ---
-    const checkAuth = (minRole) => {
-        if (minRole === ROLES.SISWA && currentRole !== ROLES.GUEST) return true;
-        if (minRole === ROLES.GURU && isGuru) return true;
-        if (minRole === ROLES.ADMIN && isAdmin) return true;
-        return false;
-    }
-
-    const handleLogin = (e) => {
-        e.preventDefault();
-        const role = PIN_MAP[pinInput];
-        if (role) {
-            setCurrentRole(role);
-            localStorage.setItem('tkj_user_role', role);
-            setIsLoginModalOpen(false);
-            setPinInput('');
-            triggerToast(`Login Berhasil! Role: ${role}`);
-        } else {
-            triggerToast("PIN Salah!", "error");
-            setPinInput('');
-        }
-    }
-
-    const handleLogout = () => {
-        if (confirm("Logout?")) {
-            setCurrentRole(ROLES.GUEST);
-            localStorage.removeItem('tkj_user_role');
-            setIsLoginModalOpen(true); // Tampilkan modal login lagi
-            triggerToast("Berhasil Logout");
-        }
-    }
-    // -------------------------
-
-    // --- SAVE COUNTDOWN DASHBOARD ---
-    const handleSaveCountdown = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; }
-        try {
-            await setDoc(doc(db, 'settings', 'countdown'), {
-                title: countdownData.title,
-                targetDate: countdownData.targetDate,
-                updatedAt: serverTimestamp()
-            });
-            triggerToast("Countdown Dashboard Diupdate!");
-        } catch (e) {
-            triggerToast("Gagal update", "error");
-        }
-    }
-
-    // --- SAVE COUNTDOWN LANDING PAGE (BARU) ---
-    const handleSaveLandingCountdown = async (e) => {
-        e.preventDefault();
-        if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; }
-        try {
-            await setDoc(doc(db, 'settings', 'landing_countdown'), {
-                title: landingCountdownData.title,
-                targetDate: landingCountdownData.targetDate,
-                updatedAt: serverTimestamp()
-            });
-            triggerToast("Countdown Landing Page Diupdate!");
-        } catch (e) {
-            triggerToast("Gagal update landing", "error");
-        }
-    }
-
-    const handlePostNews = async (e) => {
-        e.preventDefault();
-        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
-        if (!newsInput.title || !newsInput.content) { triggerToast("Judul & Isi wajib diisi!", "error"); return; }
-        try {
-            await addDoc(collection(db, 'berita_sekolah'), {
-                title: newsInput.title, category: newsInput.category, content: newsInput.content,
-                image: newsInput.imageBase64 || null,
-                author: `${currentRole} Kelas ${kelasId}`,
-                createdAt: serverTimestamp(),
-                dateString: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-            });
-            triggerToast("Berita Berhasil Diposting!"); setIsNewsModalOpen(false);
-            setNewsInput({ title: '', category: 'Kegiatan', content: '', imageBase64: '' }); setNewsImagePreview(null);
-        } catch (e) { triggerToast("Gagal posting: " + e.message, "error"); }
-    }
-
-    const handlePostGaleri = async (e) => {
-        e.preventDefault();
-        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
-        if (!galeriInput.imageBase64) { triggerToast("Wajib upload foto wak!", "error"); return; }
-        try {
-            await addDoc(collection(db, 'galeri_sekolah'), {
-                caption: galeriInput.caption || 'Tanpa Keterangan',
-                image: galeriInput.imageBase64,
-                author: `${currentRole} Kelas ${kelasId}`,
-                createdAt: serverTimestamp()
-            });
-            triggerToast("Foto Masuk Galeri!"); setIsGaleriModalOpen(false);
-            setGaleriInput({ caption: '', imageBase64: '' }); setGaleriImagePreview(null);
-        } catch (e) { triggerToast("Gagal upload: " + e.message, "error"); }
-    }
-
+    const handleSaveSchedule = async (e) => { e.preventDefault(); const m = scheduleInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}jadwal`, hariPilihan), { mapel: m, updatedAt: serverTimestamp() }); setIsScheduleModalOpen(false); triggerToast("Jadwal Diupdate"); }
+    const handleSavePiket = async (e) => { e.preventDefault(); const n = piketInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}piket`, hariPilihan), { names: n, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false); triggerToast("Piket Diupdate"); }
+    const handleSaveInfo = async (e) => { e.preventDefault(); await setDoc(doc(db, 'pengumuman', 'info_utama'), { isi: infoInput, updatedAt: serverTimestamp() }); setIsInfoModalOpen(false); triggerToast("Info Dibroadcast"); }
+    
     const handleSaveSettings = async (e) => {
         e.preventDefault();
-        if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; }
         try {
-            // Logika AI hanya untuk ADMIN
-            if (settingTab === 'ai' && isAdmin) {
+            if (settingTab === 'ai' && canViewAllSettings) {
                 const aiUpdates = { model: selectedModel, guest_context: guestAiContext, updatedAt: serverTimestamp() };
                 if (apiKeyInput.trim()) { aiUpdates.apiKey = apiKeyInput; setIsApiKeySet(true); }
                 await setDoc(doc(db, 'settings', 'ai_config'), aiUpdates, { merge: true });
-            } else if (settingTab === 'kas') {
-                 // Logika Data Kelas (Guru/Admin)
+            } else if (settingTab === 'kas' && canViewClassSettings) {
                 await setDoc(doc(db, 'settings', `${dbPrefix}kas_config`), { saldoAwal: parseInt(saldoAwal), nominal: parseInt(nominalKas), updatedAt: serverTimestamp() });
             }
             triggerToast("Konfigurasi Disimpan!"); setIsSettingsModalOpen(false); setApiKeyInput('');
         } catch (e) { triggerToast("Gagal simpan", "error"); }
     }
 
-    // FUNGSI KHUSUS
-    const handleBuktiChange = (e) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const f = e.target.files[0]; if (f && f.size <= 500 * 1024) { setBuktiFile(f); const r = new FileReader(); r.onloadend = () => setBuktiPreview(r.result); r.readAsDataURL(f); } else { triggerToast("File max 500KB!", "error"); } }
-    const handleAddKas = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (!kasInput.nama || !kasInput.jumlah) return; try { await addDoc(collection(db, `${dbPrefix}uang_kas`), { tanggal: kasInput.tanggal, nama: kasInput.nama, jumlah: parseInt(kasInput.jumlah.replace(/\./g, '')), tipe: kasInput.tipe, keterangan: kasInput.keterangan || '-', createdAt: serverTimestamp(), buktiFoto: buktiPreview }); setKasInput({ ...kasInput, nama: '', jumlah: '', keterangan: '' }); clearBukti(); triggerToast("Transaksi Berhasil!"); } catch (e) { triggerToast("Gagal simpan", "error"); } }
-    const handleDeleteKas = async (id) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) try { await deleteDoc(doc(db, `${dbPrefix}uang_kas`, id)); triggerToast("Dihapus"); } catch (e) { triggerToast("Gagal hapus", "error") } }
-    const handleExportExcel = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const d = dataKas.map(i => ({ "Tgl": i.tanggal, "Ket": `${i.nama} (${i.keterangan})`, "Masuk": i.tipe === 'masuk' ? i.jumlah : 0, "Keluar": i.tipe === 'keluar' ? i.jumlah : 0 })); d.unshift({ "Tgl": "SALDO AWAL", "Masuk": parseInt(saldoAwal) }); d.push({ "Tgl": "TOTAL", "Masuk": totalSaldoAkhir }); const ws = XLSX.utils.json_to_sheet(d); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Kas"); XLSX.writeFile(wb, `Laporan_Kas_Kelas_${kelasId}.xlsx`); triggerToast("Download Dimulai!"); }
-    const handleAddStudent = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (newStudentName.trim()) { await addDoc(collection(db, `${dbPrefix}students`), { name: newStudentName, createdAt: serverTimestamp() }); setNewStudentName(''); triggerToast("Siswa Ditambahkan"); } }
-    const handleDeleteStudent = async (id) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}students`, id)); triggerToast("Siswa Dihapus"); } }
-    const handleAddQuote = async (e) => { e.preventDefault(); if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; } if (newQuoteText.trim()) { await addDoc(collection(db, 'quotes'), { text: newQuoteText, author: "Admin", createdAt: serverTimestamp() }); setNewQuoteText(''); triggerToast("Quote Ditambah"); } }
-    const handleDeleteQuote = async (id) => { if (!isAdmin) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, 'quotes', id)); triggerToast("Quote Dihapus"); } }
-    const handleSaveAbsensi = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } try { await setDoc(doc(db, `${dbPrefix}absensi`, 'harian'), { sakit: absenInput.sakit || '-', izin: absenInput.izin || '-', alpha: absenInput.alpha || '-', lastUpdated: serverTimestamp() }); setIsAbsenModalOpen(false); setAbsenTab('view'); triggerToast("Absensi Diupdate!"); } catch (e) { triggerToast("Gagal update", "error"); } }
-    const openAbsenModal = (tab = 'view') => { setAbsenInput({ sakit: absenHariIni.sakit !== '-' ? absenHariIni.sakit : '', izin: absenHariIni.izin !== '-' ? absenHariIni.izin : '', alpha: absenHariIni.alpha !== '-' ? absenHariIni.alpha : '' }); setAbsenTab(tab); setIsAbsenModalOpen(true); }
-    const handleAddTask = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (newTask.judul) { await addDoc(collection(db, `${dbPrefix}tugas`), { judul: newTask.judul, mapel: newTask.mapel || 'Umum', selesai: false, createdAt: serverTimestamp() }); setNewTask({ judul: '', mapel: '' }); setIsTaskModalOpen(false); triggerToast("Tugas Ditambahkan"); } }
-    const handleDeleteTask = async (e, id) => { e.stopPropagation(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (confirm("Hapus?")) { await deleteDoc(doc(db, `${dbPrefix}tugas`, id)); triggerToast("Tugas Dihapus"); } }
-    const handleToggleTask = async (id, s) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } await updateDoc(doc(db, `${dbPrefix}tugas`, id), { selesai: !s }); }
-    const handleSaveSchedule = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const m = scheduleInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}jadwal`, hariPilihan), { mapel: m, updatedAt: serverTimestamp() }); setIsScheduleModalOpen(false); triggerToast("Jadwal Diupdate"); }
-    const handleSavePiket = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const n = piketInput.split(',').map(i => i.trim()).filter(i => i); await setDoc(doc(db, `${dbPrefix}piket`, hariPilihan), { names: n, updatedAt: serverTimestamp() }); setIsPiketModalOpen(false); triggerToast("Piket Diupdate"); }
-    const handleSaveInfo = async (e) => { e.preventDefault(); if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } await setDoc(doc(db, 'pengumuman', 'info_utama'), { isi: infoInput, updatedAt: serverTimestamp() }); setIsInfoModalOpen(false); triggerToast("Info Dibroadcast"); }
-    const openScheduleModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setScheduleInput(jadwalTampil ? jadwalTampil.mapel.join(', ') : ''); setIsScheduleModalOpen(true); }
-    const openPiketModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setPiketInput(piketTampil ? piketTampil.names.join(', ') : ''); setIsPiketModalOpen(true); }
-    const openInfoModal = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const i = dataInfo.find(x => x.id === 'info_utama') || dataInfo[0]; setInfoInput(i ? i.isi : ''); setIsInfoModalOpen(true); }
+    // SIMPAN COUNTDOWN (DASHBOARD)
+    const handleSaveCountdown = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'settings', 'countdown'), {
+                title: countdownData.title,
+                targetDate: countdownData.targetDate,
+                updatedAt: serverTimestamp()
+            });
+            triggerToast("Countdown Berhasil Diset!");
+            setIsCountdownModalOpen(false);
+        } catch (e) { triggerToast("Gagal set countdown", "error"); }
+    }
+
+    // SIMPAN COUNTDOWN (LANDING PAGE - OPSIONAL)
+    const handleSaveLandingCountdown = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'settings', 'landing_countdown'), {
+                title: landingCountdownData.title,
+                targetDate: landingCountdownData.targetDate,
+                updatedAt: serverTimestamp()
+            });
+            triggerToast("Countdown Landing Diset!");
+        } catch (e) { triggerToast("Gagal set landing", "error"); }
+    }
 
     async function fileToGenerativePart(file) { const r = new FileReader(); const p = new Promise(res => r.onloadend = () => res(r.result.split(',')[1])); r.readAsDataURL(file); return { inlineData: { data: await p, mimeType: file.type } }; }
-    const handleSendChat = async (e) => {
-        e.preventDefault();
-        if (!chatInput.trim() && !imageFile) return;
-        
-        // Cek apakah API Key sudah diset (hanya butuh untuk AI Chat)
-        const s = await getDoc(doc(db, 'settings', 'ai_config'));
-        if (!s.exists() || !s.data().apiKey) {
-            setChatHistory(p => [...p, { role: 'model', text: `Error: API Key belum diset oleh Admin. AI tidak bisa merespon.` }]);
-            return;
-        }
-
-        const msg = { role: 'user', text: chatInput, image: imagePreview }; 
-        setChatHistory(p => [...p, msg]); 
-        setChatInput(''); 
-        setImageFile(null); 
-        setImagePreview(null); 
-        setIsTyping(true); 
-        
-        try { 
-            const genAI = new GoogleGenerativeAI(s.data().apiKey); 
-            const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' }); 
-            const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n'); 
-            const prompt = `Role: "TKJ Assistant", AI asisten SMK TKJ.\nStyle: Gaul tapi SOPAN. NO SARA/PORNO/JUDI.\nContext:\n${ctx}\nUser: "${msg.text}"`; 
-            const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt); 
-            setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]); 
-        } catch (e) { 
-            setChatHistory(p => [...p, { role: 'model', text: `Error: ${e.message}. Cek API Key atau Model AI di Pengaturan.` }]); 
-        } finally { setIsTyping(false); }
-    }
-    const handlePdfImageChange = (e) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } if (e.target.files) setPdfImages(p => [...p, ...Array.from(e.target.files).map(f => ({ file: f, url: URL.createObjectURL(f) }))]) }
-    const handleGeneratePdf = () => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } setPdfImages([]); setIsPdfModalOpen(false); triggerToast("PDF Dibuat!"); }
-    const removePdfImage = (i) => { if (!isGuru) { triggerToast("Akses Ditolak", "error"); return; } const n = [...pdfImages]; n.splice(i, 1); setPdfImages(n); }
+    const handleSendChat = async (e) => { e.preventDefault(); if (!chatInput.trim() && !imageFile) return; const msg = { role: 'user', text: chatInput, image: imagePreview }; setChatHistory(p => [...p, msg]); setChatInput(''); setImageFile(null); setImagePreview(null); setIsTyping(true); try { const s = await getDoc(doc(db, 'settings', 'ai_config')); if (!s.exists()) throw new Error("API Key belum diset"); const genAI = new GoogleGenerativeAI(s.data().apiKey); const model = genAI.getGenerativeModel({ model: s.data().model || 'gemini-1.5-flash' }); const ctx = chatHistory.slice(-6).map(x => `${x.role === 'user' ? 'Siswa' : 'AI'}: ${x.text}`).join('\n'); const prompt = `Role: "TKJ Assistant", AI asisten SMK TKJ.\nStyle: Gaul tapi SOPAN. NO SARA/PORNO/JUDI.\nContext:\n${ctx}\nUser: "${msg.text}"`; const res = await model.generateContent(imageFile ? [prompt, await fileToGenerativePart(imageFile)] : prompt); setChatHistory(p => [...p, { role: 'model', text: res.response.text() }]); } catch (e) { setChatHistory(p => [...p, { role: 'model', text: `Error: ${e.message}` }]); } finally { setIsTyping(false); } }
     const handleFileChange = (e) => { const f = e.target.files[0]; if (f) { setImageFile(f); const r = new FileReader(); r.onloadend = () => setImagePreview(r.result); r.readAsDataURL(f); } }
     const clearImage = () => { setImageFile(null); setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ''; }
-
-    // Jika belum login, tampilkan loading/halaman kosong
-    if (currentRole === ROLES.GUEST && !isLoginModalOpen) {
-        // Ini adalah fallback, seharusnya modal login muncul
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-[#0b1121] text-slate-400">
-                <Lock size={48} />
-                <p className="ml-4 text-lg">Memuat Gerbang Akses...</p>
-                <button onClick={() => setIsLoginModalOpen(true)} className="ml-4 text-blue-500 hover:underline">Masuk</button>
-            </div>
-        );
-    }
+    
+    const openScheduleModal = () => { setScheduleInput(jadwalTampil ? jadwalTampil.mapel.join(', ') : ''); setIsScheduleModalOpen(true); }
+    const openPiketModal = () => { setPiketInput(piketTampil ? piketTampil.names.join(', ') : ''); setIsPiketModalOpen(true); }
     
     return (
         <div className="min-h-screen font-sans bg-slate-100 dark:bg-[#0b1121] text-slate-800 dark:text-slate-100 pb-20 md:pb-0 transition-colors duration-300">
@@ -489,488 +361,477 @@ function DashboardKelas({ kelasId }) {
             <div className="bg-[#002f6c] dark:bg-[#0f172a]/80 backdrop-blur-md text-white shadow-md sticky top-0 z-40 border-b-4 border-[#00994d] dark:border-blue-600 transition-colors">
                 <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
                     <div className="flex items-center gap-4">
-                        <div className="hidden md:block h-16 w-auto p-1 transition-transform hover:scale-105 duration-300 bg-white/10 rounded-lg backdrop-blur-sm"><img src={logoJurusan} alt="Logo" className="h-full w-full object-cover rounded-lg" /></div>
-                        <div><h1 className="text-xl md:text-2xl font-extrabold tracking-wider uppercase leading-none">{kelasId} TKJ <span className="text-[#00994d] dark:text-blue-400">DASHBOARD</span></h1><p className="text-[11px] text-blue-200 opacity-90 hidden md:block font-light tracking-wide mt-1">Sistem Informasi Manajemen Kelas Digital</p></div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="hidden md:block text-right border-r border-blue-800 dark:border-slate-600 pr-4 mr-1"><div className="text-lg font-bold font-mono text-white leading-none">{time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</div><div className="text-[10px] text-blue-300 dark:text-slate-400 uppercase tracking-wide font-semibold mt-1">{time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all border border-white/10">{isDarkMode ? <Sun size={18} className="text-yellow-300" /> : <Moon size={18} />}</button>
-                            <button onClick={() => navigate('/')} className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg shadow-sm border border-blue-400/50 text-xs font-bold transition-all"><Home size={16} /> <span className="hidden md:inline">Home</span></button>
-                            {currentRole !== ROLES.GUEST ? (
-                                <button onClick={handleLogout} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg shadow-md border border-red-400 text-xs font-bold transition-all">
-                                    <LogOut size={16} /> <span className="hidden md:inline">Keluar ({currentRole})</span>
-                                </button>
-                            ) : (
-                                <button onClick={() => setIsLoginModalOpen(true)} className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all border border-white/20 backdrop-blur-sm">
-                                    <Lock size={16} /> Masuk
-                                </button>
-                            )}
-                            {(isAdmin || isGuru) && (<button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-700/50 hover:bg-slate-600 p-2 rounded-lg text-slate-200 transition-colors border border-slate-600"><Settings size={18} /></button>)}
+                        <div className="hidden md:block h-16 w-auto p-1 bg-white/10 rounded-lg"><img src={logoJurusan} alt="Logo" className="h-full w-full object-cover rounded-lg" /></div>
+                        <div>
+                            <h1 className="text-xl md:text-2xl font-extrabold tracking-wider uppercase leading-none">{kelasId} TKJ <span className="text-[#00994d] dark:text-blue-400">DASHBOARD</span></h1>
+                            <p className="text-[11px] text-blue-200 opacity-90 hidden md:block font-light tracking-wide mt-1">
+                                Hi, {user.displayName} ({user.role}{user.jabatan !== 'MEMBER' ? ` - ${user.jabatan}` : ''})
+                            </p>
                         </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-white/10">{isDarkMode ? <Sun size={18} className="text-yellow-300" /> : <Moon size={18} />}</button>
+                        <button onClick={() => navigate('/')} className="bg-blue-600 px-3 py-2 rounded-lg text-xs font-bold flex gap-1 items-center hover:bg-blue-500"><Home size={16}/> <span className="hidden md:inline">Home</span></button>
+                        <button onClick={handleLogout} className="bg-red-600 px-3 py-2 rounded-lg text-xs font-bold flex gap-1 items-center hover:bg-red-500"><LogOut size={16}/> <span className="hidden md:inline">Logout</span></button>
+                        {(canViewClassSettings || canViewAllSettings) && (
+                            <button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg"><Settings size={18} /></button>
+                        )}
                     </div>
                 </div>
             </div>
 
             <div className="p-4 md:p-8 max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+                
                 {/* INFO & ABSEN */}
                 <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2 bg-white dark:bg-slate-800 border-l-[6px] border-[#002f6c] dark:border-blue-500 p-6 rounded-r-lg shadow-sm flex flex-col justify-between relative overflow-hidden transition-colors">
-                        <div className="relative z-10"><div className="flex items-center gap-2 mb-2"><span className="bg-[#002f6c] dark:bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider shadow-sm flex items-center gap-1"><Megaphone size={10} /> Info Sekolah</span></div>{dataInfo.length > 0 ? <p className="text-slate-800 dark:text-slate-200 text-sm font-medium leading-relaxed border-l-2 border-slate-200 dark:border-slate-600 pl-3">{dataInfo.find(i => i.id === 'info_utama')?.isi || dataInfo[0]?.isi}</p> : <p className="text-slate-400 italic text-sm">Tidak ada pengumuman.</p>}</div>
-                        {(isAdmin || isGuru) && <button onClick={openInfoModal} className="text-[#002f6c] dark:text-blue-400 hover:text-white hover:bg-[#002f6c] dark:hover:bg-blue-600 flex items-center gap-1 text-xs font-bold border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded transition-all shadow-sm w-fit mt-4"><Edit3 size={12} /> Edit</button>}
+                    <div className="md:col-span-2 bg-white dark:bg-slate-800 border-l-[6px] border-[#002f6c] dark:border-blue-500 p-6 rounded-r-lg shadow-sm flex flex-col justify-between">
+                         <div className="relative z-10"><div className="flex items-center gap-2 mb-2"><span className="bg-[#002f6c] text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase"><Megaphone size={10} /> Info Sekolah</span></div><p className="text-sm font-medium border-l-2 pl-3">{dataInfo.find(i => i.id === 'info_utama')?.isi || "Belum ada info."}</p></div>
+                         {canBroadcastInfo && <button onClick={() => {setInfoInput(dataInfo.find(i => i.id === 'info_utama')?.isi || ""); setIsInfoModalOpen(true)}} className="text-blue-500 text-xs font-bold mt-4 flex gap-1 w-fit"><Edit3 size={12}/> Edit Info</button>}
                     </div>
-                    <div className="bg-white dark:bg-slate-800 border-t-4 border-red-500 dark:border-pink-600 rounded-lg shadow-sm overflow-hidden flex flex-col transition-colors">
-                        <div className="p-5 flex-1">
-                            <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm flex items-center gap-2"><UserMinus size={16} className="text-red-500 dark:text-pink-500" /> Absensi {kelasId}</h3>{(isAdmin || isGuru) && (<button onClick={() => openAbsenModal('input')} className="text-slate-400 hover:text-red-500 bg-red-50 dark:bg-slate-700 p-1.5 rounded-md transition-colors"><Edit3 size={14} /></button>)}</div>
-                            <div className="grid grid-cols-3 gap-2 text-center">
-                                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-100 dark:border-yellow-800 flex flex-col items-center justify-center"><span className="text-[10px] text-yellow-600 dark:text-yellow-400 font-bold uppercase tracking-wider mb-1">Sakit</span><span className="text-xl font-black text-slate-700 dark:text-slate-200 leading-none">{countSakit}</span></div>
-                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800 flex flex-col items-center justify-center"><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider mb-1">Izin</span><span className="text-xl font-black text-slate-700 dark:text-slate-200 leading-none">{countIzin}</span></div>
-                                <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-100 dark:border-red-800 flex flex-col items-center justify-center"><span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider mb-1">Alpha</span><span className="text-xl font-black text-slate-700 dark:text-slate-200 leading-none">{countAlpha}</span></div>
-                            </div>
-                        </div>
-                        <button onClick={() => openAbsenModal('view')} className="w-full py-2 bg-red-50 dark:bg-slate-700 text-red-600 dark:text-pink-400 text-xs font-bold hover:bg-red-100 dark:hover:bg-slate-600 transition-colors flex items-center justify-center gap-1 border-t border-red-100 dark:border-slate-600"><Eye size={14} /> Lihat Detail</button>
+                    <div className="bg-white dark:bg-slate-800 border-t-4 border-red-500 rounded-lg shadow-sm p-5">
+                         <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-sm flex gap-2"><UserMinus size={16} className="text-red-500"/> Absensi</h3>{canInputAbsen && <button onClick={() => {setAbsenTab('input'); setIsAbsenModalOpen(true)}} className="text-slate-400 hover:text-red-500"><Edit3 size={14}/></button>}</div>
+                         <div className="grid grid-cols-3 gap-2 text-center">
+                             <div className="bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded"><span className="text-[10px] text-yellow-600 font-bold block">Sakit</span><span className="text-xl font-black">{countSakit}</span></div>
+                             <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded"><span className="text-[10px] text-blue-600 font-bold block">Izin</span><span className="text-xl font-black">{countIzin}</span></div>
+                             <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded"><span className="text-[10px] text-red-600 font-bold block">Alpha</span><span className="text-xl font-black">{countAlpha}</span></div>
+                         </div>
+                         <button onClick={() => {setAbsenTab('view'); setIsAbsenModalOpen(true)}} className="w-full mt-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded flex justify-center gap-1"><Eye size={14}/> Detail</button>
                     </div>
                 </div>
 
+                {/* APPROVAL PANEL (HANYA GURU/ADMIN yang akan melihat) */}
+                {canApproveUser && (
+                    <div className="md:col-span-12">
+                        <ApprovalList currentUser={user} />
+                    </div>
+                )}
+
                 {/* SIDEBAR */}
                 <div className="md:col-span-4 space-y-6">
-                    <div className="bg-white dark:bg-slate-800 p-0 rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-xl transition-all group border-t-4 border-[#00994d] dark:border-green-500" onClick={() => setIsKasModalOpen(true)}>
-                        <div className="p-5 relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={60} className="text-[#00994d] dark:text-green-400" /></div><div className="flex justify-between items-center mb-3 relative z-10"><h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide flex items-center gap-2"><Wallet size={16} className="text-[#00994d] dark:text-green-400" /> Keuangan {kelasId}</h3><div className="bg-green-50 dark:bg-green-900/30 p-1.5 rounded-full text-[#00994d] dark:text-green-400"><Plus size={14} /></div></div><p className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tighter">{formatRupiah(totalSaldoAkhir)}</p><p className="text-[10px] text-slate-400 mt-1 font-medium">Saldo Terkini • Klik untuk detail</p></div><div className="bg-green-50 dark:bg-slate-700 px-5 py-2 text-[10px] text-green-700 dark:text-green-400 font-bold text-right border-t border-green-100 dark:border-slate-600 group-hover:bg-[#00994d] group-hover:text-white transition-colors">Lihat Laporan &rarr;</div>
+                    {/* KAS WIDGET */}
+                    <div onClick={() => setIsKasModalOpen(true)} className="bg-white dark:bg-slate-800 p-5 rounded-lg shadow-md border-t-4 border-[#00994d] cursor-pointer hover:shadow-xl transition-all relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><Wallet size={60} className="text-[#00994d]" /></div>
+                        <h3 className="font-bold text-sm uppercase flex items-center gap-2 mb-2"><Wallet size={16} className="text-[#00994d]" /> Keuangan</h3>
+                        <p className="text-3xl font-black text-slate-800 dark:text-slate-100">{formatRupiah(totalSaldoAkhir)}</p>
+                        <div className="mt-3 bg-green-50 dark:bg-slate-700 px-3 py-1 text-[10px] text-green-700 font-bold rounded w-fit group-hover:bg-[#00994d] group-hover:text-white transition-colors">Lihat Detail &rarr;</div>
                     </div>
+
+                    {/* SHORTCUT GRID */}
                     <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => setIsNewsModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
-                            <div className="w-10 h-10 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-orange-100 dark:border-orange-800"><Newspaper size={20} /></div>
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Mading {(isGuru || isAdmin) && '(Post)'}</span>
+                        <button onClick={() => setIsNewsModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm flex flex-col items-center gap-2 hover:border-orange-400 border border-transparent transition-all">
+                             <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center"><Newspaper size={20}/></div>
+                             <span className="text-xs font-bold">Mading {canPostNews && '(+)'}</span>
                         </button>
-                        <button onClick={() => setIsGaleriModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
-                            <div className="w-10 h-10 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-purple-100 dark:border-purple-800"><ImageIcon size={20} /></div>
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Galeri {(isGuru || isAdmin) && '(Upload)'}</span>
+                        <button onClick={() => setIsGaleriModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm flex flex-col items-center gap-2 hover:border-purple-400 border border-transparent transition-all">
+                             <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center"><ImageIcon size={20}/></div>
+                             <span className="text-xs font-bold">Galeri {canUploadGaleri && '(+)'}</span>
                         </button>
-                        <button onClick={() => setIsAiModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-yellow-400 dark:hover:border-yellow-500 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group"><div className="w-10 h-10 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-yellow-100 dark:border-yellow-800"><Bot size={20} /></div><span className="text-xs font-bold text-slate-700 dark:text-slate-200">AI Chat</span></button>
-                        <button onClick={() => isGuru ? setIsPdfModalOpen(true) : triggerToast("Hanya Guru/Admin", "error")} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-red-400 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group"><div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-red-100 dark:border-red-800"><FileSpreadsheet size={20} /></div><span className="text-xs font-bold text-slate-700 dark:text-slate-200">PDF Tools {isGuru && '(Guru/Admin)'}</span></button>
+                        <button onClick={() => setIsAiModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm flex flex-col items-center gap-2 hover:border-yellow-400 border border-transparent transition-all">
+                             <div className="w-10 h-10 bg-yellow-50 text-yellow-600 rounded-full flex items-center justify-center"><Bot size={20}/></div>
+                             <span className="text-xs font-bold">AI Chat</span>
+                        </button>
+                        <button onClick={() => setIsStrukturModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm flex flex-col items-center gap-2 hover:border-teal-400 border border-transparent transition-all">
+                             <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-full flex items-center justify-center"><Users size={20}/></div>
+                             <span className="text-xs font-bold">Struktur</span>
+                        </button>
                     </div>
-                    {/* STRUKTUR KELAS */}
-                    <button onClick={() => setIsStrukturModalOpen(true)} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 hover:border-teal-400 hover:shadow-md transition-all flex flex-col items-center gap-2 text-center group">
-                        <div className="w-10 h-10 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform border border-teal-100 dark:border-teal-800">
-                            <Users size={20} />
+
+                    {/* PIKET */}
+                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border-t-4 border-orange-500">
+                        <div className="px-5 py-3 border-b dark:border-slate-700 flex justify-between items-center"><h3 className="text-sm font-bold flex gap-2"><UserCheck size={16} className="text-orange-500"/> Piket</h3>{canManagePiket && !isLibur && <button onClick={openPiketModal}><Edit3 size={14}/></button>}</div>
+                        <div className="p-5 text-center min-h-[100px] flex items-center justify-center flex-col bg-slate-50/50 dark:bg-slate-900/50">
+                            {isLibur ? <span className="text-xs text-orange-500 font-bold bg-orange-50 px-3 py-1 rounded-full">Libur</span> : piketTampil ? <div className="flex flex-wrap gap-2 justify-center">{piketTampil.names.map((n, i) => <span key={i} className="bg-white dark:bg-slate-700 text-xs font-bold px-3 py-1 rounded shadow-sm border dark:border-slate-600">{n}</span>)}</div> : <span className="text-xs text-slate-400 italic">Belum ada data.</span>}
                         </div>
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Struktur</span>
-                    </button>
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 border-t-4 border-orange-500 dark:border-orange-600">
-                        <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 rounded-t-lg"><h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2"><UserCheck size={16} className="text-orange-500" /> Piket {kelasId}</h3>{(isAdmin || isGuru) && !isLibur && <button onClick={openPiketModal} className="text-slate-400 hover:text-orange-500 transition-colors bg-slate-50 dark:bg-slate-700 p-1 rounded"><Edit3 size={14} /></button>}</div>
-                        <div className="p-5 text-center min-h-[100px] flex items-center justify-center flex-col bg-slate-50/50 dark:bg-slate-900/50">{isLibur ? <span className="text-xs text-orange-500 font-bold bg-orange-50 dark:bg-orange-900/20 px-3 py-1 rounded-full border border-orange-100 dark:border-orange-800">Sekolah Libur</span> : piketTampil ? <div className="flex flex-wrap gap-2 justify-center">{piketTampil.names.map((n, i) => <span key={i} className="bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs font-bold px-3 py-1.5 rounded border border-slate-200 dark:border-slate-600 shadow-sm">{n}</span>)}</div> : <span className="text-xs text-slate-400 italic">Belum ada data.</span>}</div>
                     </div>
                 </div>
 
                 {/* MAIN CONTENT */}
                 <div className="md:col-span-8 space-y-6">
-
-                    {/* --- WIDGET COUNTDOWN (DASHBOARD) --- */}
-                    {countdownData.targetDate && (
+                    {/* COUNTDOWN WIDGET (MODIFIED) */}
+                    {countdownData.targetDate ? (
                         <div className="bg-gradient-to-r from-[#002f6c] to-[#004bb5] rounded-xl shadow-lg p-6 text-white relative overflow-hidden group">
                             {/* Background Decoration */}
                             <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all"></div>
                             
+                            {/* EDIT BUTTON (Langsung di widget) */}
+                            {canManageUsers && (
+                                <button onClick={() => setIsCountdownModalOpen(true)} className="absolute top-3 right-3 bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-20" title="Edit Countdown">
+                                    <Edit3 size={16}/>
+                                </button>
+                            )}
+
                             <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-                                <div className="text-center md:text-left">
+                                <div className="text-center md:text-left flex-1 min-w-0">
                                     <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
                                         <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">Coming Soon</span>
                                         <Calendar size={14} className="text-blue-200"/>
                                     </div>
-                                    <h3 className="text-2xl font-black leading-tight mb-1">{countdownData.title}</h3>
+                                    <h3 className="text-2xl font-black leading-tight mb-1 truncate">{countdownData.title}</h3>
                                     <p className="text-blue-200 text-xs md:text-sm">Persiapkan dirimu, jangan sampai terlewat!</p>
                                 </div>
 
-                                {/* Timer Boxes */}
-                                <div className="flex gap-2 md:gap-3">
-                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
-                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.days}</span>
-                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Hari</span>
+                                {/* Timer Boxes (Fixed Layout) */}
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 rounded-lg text-center w-16">
+                                        <span className="block text-xl font-black">{timeLeft.days}</span>
+                                        <span className="text-[9px] uppercase font-bold text-blue-200">Hari</span>
                                     </div>
-                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
-                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.hours}</span>
-                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Jam</span>
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 rounded-lg text-center w-16">
+                                        <span className="block text-xl font-black">{timeLeft.hours}</span>
+                                        <span className="text-[9px] uppercase font-bold text-blue-200">Jam</span>
                                     </div>
-                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 md:p-3 rounded-lg text-center min-w-[60px] md:min-w-[70px]">
-                                        <span className="block text-xl md:text-2xl font-black">{timeLeft.minutes}</span>
-                                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-blue-200">Menit</span>
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 rounded-lg text-center w-16">
+                                        <span className="block text-xl font-black">{timeLeft.minutes}</span>
+                                        <span className="text-[9px] uppercase font-bold text-blue-200">Mnt</span>
+                                    </div>
+                                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-2 rounded-lg text-center w-16">
+                                        <span className="block text-xl font-black">{timeLeft.seconds}</span>
+                                        <span className="text-[9px] uppercase font-bold text-blue-200">Dtk</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    )}
-                    
-                    {/* Jika Countdown kosong tapi Admin login, tampilkan tombol tambah shortcut */}
-                    {!countdownData.targetDate && (isAdmin || isGuru) && (
-                         <div onClick={() => { if(isAdmin || isGuru) { setIsSettingsModalOpen(true); setSettingTab('countdown'); } else { triggerToast("Akses Ditolak", "error"); }}} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-[#002f6c] transition-colors group">
-                            <Clock size={24} className="mx-auto text-slate-400 group-hover:text-[#002f6c] mb-2"/>
-                            <p className="text-sm font-bold text-slate-500 group-hover:text-[#002f6c]">Setup Hitung Mundur</p>
-                         </div>
+                    ) : (
+                        // Placeholder jika countdown belum ada
+                        (canManageUsers) && (
+                            <div onClick={() => setIsCountdownModalOpen(true)} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-[#002f6c] transition-colors group flex flex-col items-center justify-center h-32">
+                                <Clock size={24} className="text-slate-400 group-hover:text-[#002f6c] mb-2"/>
+                                <p className="text-sm font-bold text-slate-500 group-hover:text-[#002f6c]">Setup Hitung Mundur</p>
+                            </div>
+                        )
                     )}
 
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 border-t-4 border-[#002f6c] dark:border-blue-500">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                            <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-[#002f6c] dark:text-blue-400 shadow-md"><BookOpen size={20} /></div><div><h2 className="font-bold text-lg text-slate-800 dark:text-slate-200">Jadwal Pelajaran</h2><p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[#002f6c] dark:text-blue-400">{hariPilihan}</p></div></div>
-                            <div className="flex gap-1 overflow-x-auto pb-1 md:pb-0 w-full md:w-auto no-scrollbar">{['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].map(h => (<button key={h} onClick={() => setHariPilihan(h)} className={`px-4 py-1.5 rounded text-[10px] font-bold transition-all border-b-2 ${hariPilihan === h ? 'border-[#002f6c] dark:border-blue-500 text-[#002f6c] dark:text-blue-400 bg-blue-50 dark:bg-slate-700' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-700'}`}>{h}</button>))}{(isAdmin || isGuru) && !isLibur && <button onClick={openScheduleModal} className="px-2 py-1 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-500 rounded hover:bg-slate-200 transition-colors"><Edit3 size={12} /></button>}</div>
+                    {/* JADWAL PELAJARAN */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border-t-4 border-[#002f6c]">
+                        <div className="flex justify-between items-center mb-4">
+                             <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 rounded text-[#002f6c]"><BookOpen size={20}/></div><div><h2 className="font-bold text-lg">Jadwal</h2><p className="text-xs font-bold uppercase text-[#002f6c]">{hariPilihan}</p></div></div>
+                             <div className="flex gap-1">{['Senin','Selasa','Rabu','Kamis','Jumat'].map(h => <button key={h} onClick={() => setHariPilihan(h)} className={`px-3 py-1 rounded text-[10px] font-bold ${hariPilihan===h ? 'bg-blue-50 text-blue-600' : 'text-slate-400'}`}>{h}</button>)}{canEditSchedule && !isLibur && <button onClick={openScheduleModal} className="px-2 bg-slate-100 rounded ml-2"><Edit3 size={12}/></button>}</div>
                         </div>
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700"><div className="grid grid-cols-2 md:grid-cols-3 gap-3">{isLibur ? <div className="col-span-full py-10 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-lg border border-dashed border-slate-200 dark:border-slate-600"><Coffee size={32} className="mx-auto mb-2 opacity-50" /><p className="text-xs">Tidak ada KBM.</p></div> : loadingJadwal ? <p className="text-xs text-slate-400 text-center py-4">Loading...</p> : jadwalTampil ? jadwalTampil.mapel.map((m, i) => (<div key={i} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-sm hover:shadow-md transition-all hover:border-blue-300"><span className="w-6 h-6 rounded bg-blue-50 dark:bg-blue-900/20 text-[#002f6c] dark:text-blue-400 flex items-center justify-center text-[10px] font-bold border border-blue-100 dark:border-blue-800">{i + 1}</span><span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{m}</span></div>)) : <div className="col-span-full py-6 text-center text-slate-400 italic text-xs">Jadwal belum diatur.</div>}</div></div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border dark:border-slate-700">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {isLibur ? <div className="col-span-full py-6 text-center text-xs text-slate-400">Libur Wak.</div> : jadwalTampil ? jadwalTampil.mapel.map((m,i) => <div key={i} className="p-3 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded shadow-sm text-xs font-bold flex gap-2"><span className="text-[#002f6c]">{i+1}.</span> {m}</div>) : <div className="col-span-full text-center text-xs text-slate-400">Jadwal Kosong.</div>}
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 relative overflow-hidden flex items-center justify-center text-center">
-                        <div className="max-w-lg relative z-10"><Quote size={24} className="text-[#00994d] dark:text-green-500 mx-auto mb-3 opacity-80" />
-                            <AnimatePresence mode="wait"><motion.div key={quote.text} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.5 }}><p className="font-serif italic text-slate-600 dark:text-slate-300 text-sm md:text-base leading-relaxed">"{quote.text}"</p><p className="text-[10px] font-bold mt-3 uppercase tracking-widest text-[#00994d] dark:text-green-500">— {quote.author}</p></motion.div></AnimatePresence>
+                    {/* TUGAS */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border-t-4 border-purple-600">
+                        <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-purple-100 rounded text-purple-700"><CheckSquare size={20}/></div><h3 className="font-bold">Tugas</h3></div>{canManageTugas && <button onClick={() => setIsTaskModalOpen(true)} className="bg-[#002f6c] text-white px-3 py-1.5 rounded-lg text-xs font-bold flex gap-1"><Plus size={14}/> Tambah</button>}</div>
+                        <div className="space-y-2">
+                             {daftarTugas.length === 0 && <div className="text-center py-6 text-xs text-slate-400 border border-dashed rounded bg-slate-50">Tidak ada tugas.</div>}
+                             {daftarTugas.map(t => (
+                                 <div key={t.id} onClick={() => handleToggleTask(t.id, t.selesai)} className={`p-3 rounded-lg border dark:border-slate-700 flex justify-between items-center ${t.selesai ? 'bg-slate-50 dark:bg-slate-900 opacity-60' : 'bg-white dark:bg-slate-700 shadow-sm'} ${canManageTugas ? 'cursor-pointer' : ''}`}>
+                                     <div className="flex items-center gap-3">
+                                         <div className={`w-4 h-4 rounded border flex items-center justify-center ${t.selesai ? 'bg-green-500 border-green-500' : 'bg-white'}`}>{t.selesai && <CheckSquare size={10} className="text-white"/>}</div>
+                                         <div><h4 className={`font-bold text-sm ${t.selesai && 'line-through text-slate-400'}`}>{t.judul}</h4><span className="text-[10px] bg-slate-100 dark:bg-slate-900 px-2 rounded border dark:border-slate-600">{t.mapel}</span></div>
+                                     </div>
+                                     {canManageTugas && <button onClick={(e) => handleDeleteTask(e, t.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>}
+                                 </div>
+                             ))}
                         </div>
-                        {isAdmin && <button onClick={() => setIsQuoteModalOpen(true)} className="absolute top-3 right-3 text-slate-300 hover:text-[#00994d] transition-colors"><Edit3 size={14} /></button>}
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border-t-4 border-purple-600 dark:border-purple-500 border border-slate-200 dark:border-slate-700">
-                        <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-3"><div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded shadow-sm"><CheckSquare size={20} /></div><h3 className="font-bold text-slate-800 dark:text-slate-200 text-base">Agenda & Tugas {kelasId}</h3></div>{(isAdmin || isGuru) && <button onClick={() => setIsTaskModalOpen(true)} className="bg-[#002f6c] hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-md transition-colors"><Plus size={14} /> Tambah</button>}</div>
-                        <div className="space-y-2">{!loadingTugas && daftarTugas.length === 0 && <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 dark:bg-slate-900 rounded border border-dashed border-slate-200 dark:border-slate-700">Tidak ada tugas aktif. Aman!</div>}{daftarTugas.map(t => (<div key={t.id} onClick={() => (isAdmin || isGuru) && handleToggleTask(t.id, t.selesai)} className={`p-3 rounded-lg border-l-4 flex items-center justify-between transition-all ${t.selesai ? 'bg-slate-50 dark:bg-slate-900 border-l-slate-300 dark:border-l-slate-600 border-t border-r border-b border-slate-200 dark:border-slate-700 opacity-60' : 'bg-white dark:bg-slate-700 border-l-purple-500 dark:border-l-purple-400 border-t border-r border-b border-slate-200 dark:border-slate-600 shadow-sm hover:shadow-md'} ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}><div className="flex items-center gap-3"><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.selesai ? 'bg-[#00994d] border-[#00994d]' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-800'}`}>{t.selesai && <CheckSquare size={10} className="text-white" />}</div><div><h4 className={`font-bold text-xs md:text-sm ${t.selesai ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}`}>{t.judul}</h4><span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium px-2 py-0.5 bg-slate-100 dark:bg-slate-900/50 rounded mt-1 inline-block border border-slate-200 dark:border-slate-600">{t.mapel}</span></div></div>{(isAdmin || isGuru) && <button onClick={(e) => handleDeleteTask(e, t.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14} /></button>}</div>))}</div>
                     </div>
                 </div>
             </div>
 
-            <footer className="text-center py-8 text-slate-400 text-xs bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 mt-8 shadow-inner"><p className="font-medium">SMK Muhammadiyah 1 Metro • © 2025 Rafiantara</p></footer>
-
-            {/* ALL MODALS */}
-            {/* LOGIN/GATE MODAL */}
-            <Modal isOpen={isLoginModalOpen} onClose={() => { if(currentRole === ROLES.GUEST) navigate('/'); setIsLoginModalOpen(false) }} title="Gerbang Akses Dashboard"><form onSubmit={handleLogin} className="space-y-4"><div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-600"><Lock size={24} className="text-slate-400 mx-auto mb-2" /><p className="text-xs text-slate-500 dark:text-slate-400">Masukkan PIN Akses</p><p className="text-[10px] text-blue-500 mt-1">Siswa: siswatkj | Guru: guruku | Admin: daus</p></div><input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-center text-slate-800 dark:text-white tracking-[8px] text-lg focus:outline-none focus:border-[#002f6c] dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-100" placeholder="••••" autoFocus maxLength={8} /><button className="w-full bg-[#002f6c] hover:bg-blue-800 text-white py-2.5 rounded-lg font-bold shadow-sm transition-all text-sm">Masuk Dashboard</button></form></Modal>
-
-            {/* SETTINGS MODAL */}
-            <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Konfigurasi">
-                
-                    <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
-                        {/* Tab AI hanya untuk Admin */}
-                        {isAdmin && (<button type="button" onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'ai' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>AI & API</button>)}
-                        {/* Tab Data Kelas untuk Guru/Admin */}
-                        {(isAdmin || isGuru) && (<button type="button" onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'kas' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Data Kelas</button>)}
-                        {/* Tab Countdown untuk Guru/Admin */}
-                        {(isAdmin || isGuru) && (<button type="button" onClick={() => setSettingTab('countdown')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${settingTab === 'countdown' ? 'bg-white dark:bg-slate-800 text-[#002f6c] dark:text-blue-400 shadow-sm' : 'text-slate-500'}`}>Countdown</button>)}
-                    </div>
-
-                    {/* TAB: AI & API (HANYA ADMIN) */}
-                    {settingTab === 'ai' && isAdmin && (
-                        <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
+            {/* --- MODALS --- */}
+            
+            {/* MODAL EDIT COUNTDOWN (BARU) */}
+            <Modal isOpen={isCountdownModalOpen} onClose={() => setIsCountdownModalOpen(false)} title="Edit Hitung Mundur">
+                <div className="space-y-6 animate-in fade-in">
+                    {/* BAGIAN 1: DASHBOARD */}
+                    <form onSubmit={handleSaveCountdown} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                        <div className="flex items-center gap-2 mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
+                            <Clock size={16} className="text-blue-600 dark:text-blue-400" />
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Widget Dashboard (Siswa)</h4>
+                        </div>
+                        <div className="space-y-3">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-300 mb-1">Gemini API Key</label>
-                                <div className="flex gap-2">
-                                    <input type="text" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-slate-800 dark:text-white text-xs outline-none focus:border-blue-500" placeholder={isApiKeySet ? "Kunci sudah terpasang (Aman)" : "Paste API Key disini..."} />
-                                    {isApiKeySet && <div className="text-green-500 flex items-center text-xs font-bold"><CheckCircle size={14} /> OK</div>}
-                                </div>
-                                <p className="text-[9px] text-slate-400 mt-1">*Kosongkan jika tidak ingin mengubah key yang sudah ada.</p>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event</label>
+                                <input type="text" value={countdownData.title} onChange={e => setCountdownData({...countdownData, title: e.target.value})} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" placeholder="Contoh: PAS Ganjil" />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-300 mb-1">Model AI</label>
-                                <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-slate-800 dark:text-white text-xs outline-none">
-                                    <option value="gemini-1.5-flash">1.5 Flash (Cepat)</option>
-                                    <option value="gemini-2.5-flash">2.5 Flash (Pintar)</option>
-                                </select>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
+                                <input type="datetime-local" value={countdownData.targetDate} onChange={e => setCountdownData({...countdownData, targetDate: e.target.value})} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" />
                             </div>
-                            <div className="border-t border-slate-200 pt-3 mt-2">
-                                <label className="block text-xs font-bold text-green-600 mb-1 flex items-center gap-1"><Brain size={12} /> Otak AI Tamu (Knowledge Base)</label>
-                                <p className="text-[10px] text-slate-400 mb-2">Info ini dipakai AI di halaman depan buat jawab pertanyaan tamu.</p>
-                                <textarea value={guestAiContext} onChange={e => setGuestAiContext(e.target.value)} className="w-full bg-green-50 border border-green-200 rounded-lg p-2 text-xs text-slate-700 h-24 focus:border-green-500 outline-none" placeholder="Contoh: Kepala Sekolah Bapak X, Jurusan TKJ berdiri tahun 2010..." />
+                            <div className="flex gap-2 pt-1">
+                                    <button type="button" onClick={async () => { if(confirm("Hapus?")) { await setDoc(doc(db, 'settings', 'countdown'), { title: '', targetDate: '' }); setCountdownData({ title: '', targetDate: '' }); setIsCountdownModalOpen(false); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
+                                    <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan Dashboard</button>
                             </div>
-                            <button className="w-full bg-[#00994d] text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 mt-2">Simpan Konfigurasi</button>
-                        </form>
-                    )}
-
-                    {/* TAB: DATA KELAS (GURU/ADMIN) */}
-                    {settingTab === 'kas' && (isAdmin || isGuru) && (
-                        <form onSubmit={handleSaveSettings} className="space-y-3 animate-in fade-in">
-                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Saldo Awal (Rp)</label><input type="number" value={saldoAwal} onChange={e => setSaldoAwal(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-800 text-xs outline-none" /></div>
-                            <div className="border-t border-slate-200 pt-3"><label className="block text-xs font-bold text-slate-500 mb-2">Siswa</label><div className="flex gap-2 mb-2"><input type="text" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-xs outline-none" placeholder="Nama..." /><button type="button" onClick={handleAddStudent} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"><Plus size={14} /></button></div><div className="max-h-[100px] overflow-y-auto custom-scrollbar space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-200">{loadingStudents ? <p className="text-xs text-slate-400">Loading...</p> : dataStudents.sort((a, b) => a.name.localeCompare(b.name)).map(s => (<div key={s.id} className="flex justify-between items-center p-1.5 bg-white rounded border border-slate-100"><span className="text-xs font-medium text-slate-700">{s.name}</span><button type="button" onClick={() => handleDeleteStudent(s.id)} className="text-red-400 hover:text-red-600"><X size={12} /></button></div>))}</div></div>
-                            <button className="w-full bg-[#00994d] text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-green-700 mt-2">Simpan Konfigurasi</button>
-                        </form>
-                    )}
-
-                    {/* TAB: COUNTDOWN (GURU/ADMIN) */}
-                    {settingTab === 'countdown' && (isAdmin || isGuru) && (
-                         <div className="space-y-6 animate-in fade-in overflow-y-auto max-h-[60vh] custom-scrollbar pr-1">
-                            {/* BAGIAN 1: DASHBOARD */}
-                            <form onSubmit={handleSaveCountdown} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
-                                <div className="flex items-center gap-2 mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
-                                    <Clock size={16} className="text-blue-600 dark:text-blue-400" />
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Widget Dashboard</h4>
-                                </div>
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event</label>
-                                        <input 
-                                            type="text" 
-                                            value={countdownData.title} 
-                                            onChange={e => setCountdownData({...countdownData, title: e.target.value})} 
-                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
-                                            placeholder="Contoh: PAS Ganjil" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
-                                        <input 
-                                            type="datetime-local" 
-                                            value={countdownData.targetDate} 
-                                            onChange={e => setCountdownData({...countdownData, targetDate: e.target.value})} 
-                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
-                                        />
-                                    </div>
-                                    <div className="flex gap-2 pt-1">
-                                         <button type="button" onClick={async () => { if(confirm("Hapus?")) { await setDoc(doc(db, 'settings', 'countdown'), { title: '', targetDate: '' }); setCountdownData({ title: '', targetDate: '' }); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
-                                         <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan Dashboard</button>
-                                    </div>
-                                </div>
-                            </form>
-
-                            {/* BAGIAN 2: LANDING PAGE */}
-                            <form onSubmit={handleSaveLandingCountdown} className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                                <div className="flex items-center gap-2 mb-3 border-b border-green-200 dark:border-green-800 pb-2">
-                                    <Monitor size={16} className="text-green-600 dark:text-green-400" />
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-green-800 dark:text-green-300">Widget Landing Page (Publik)</h4>
-                                </div>
-                                <div className="space-y-3">
-                                    <div className="text-[10px] text-green-700 dark:text-green-400 bg-white/50 dark:bg-black/20 p-2 rounded">
-                                        Info: Countdown ini muncul di halaman depan website sekolah. Gunakan untuk info PPDB atau Event Besar.
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event Publik</label>
-                                        <input 
-                                            type="text" 
-                                            value={landingCountdownData.title} 
-                                            onChange={e => setLandingCountdownData({...landingCountdownData, title: e.target.value})} 
-                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
-                                            placeholder="Contoh: Penutupan PPDB" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
-                                        <input 
-                                            type="datetime-local" 
-                                            value={landingCountdownData.targetDate} 
-                                            onChange={e => setLandingCountdownData({...landingCountdownData, targetDate: e.target.value})} 
-                                            className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" 
-                                        />
-                                    </div>
-                                    <div className="flex gap-2 pt-1">
-                                         <button type="button" onClick={async () => { if(confirm("Hapus Landing Page Countdown?")) { await setDoc(doc(db, 'settings', 'landing_countdown'), { title: '', targetDate: '' }); setLandingCountdownData({ title: '', targetDate: '' }); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
-                                         <button type="submit" className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan ke Publik</button>
-                                    </div>
-                                </div>
-                            </form>
-                         </div>
-                    )}
-            </Modal>
-
-            {/* Modal Sisa (Kas, News, Galeri, dll - Disesuaikan Aksesnya) */}
-            <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title={`Kas ${kelasId}`}><div className="space-y-4"><div className="bg-[#00994d] p-4 rounded-lg shadow-md text-center text-white"><p className="text-green-100 text-xs font-medium uppercase tracking-wider mb-1">Saldo Kas</p><h2 className="text-3xl font-bold">{formatRupiah(totalSaldoAkhir)}</h2></div><div className="flex bg-slate-100 p-1 rounded-lg mb-2"><button onClick={() => setKasTab('laporan')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'laporan' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Laporan</button>{(isAdmin || isGuru) && <button onClick={() => setKasTab('input')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${kasTab === 'input' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Input</button>}</div>{kasTab === 'laporan' && (<div className="space-y-3 animate-in fade-in"><div className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200"><select value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>Bln {m}</option>)}</select><select value={filterTahun} onChange={(e) => setFilterTahun(e.target.value)} className="bg-transparent text-slate-700 text-[10px] font-bold outline-none flex-1">{[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}</select>{(isAdmin || isGuru) && <button onClick={handleExportExcel} className="text-[10px] bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-green-700"><FileSpreadsheet size={12} /></button>}</div><div className="max-h-[250px] overflow-y-auto custom-scrollbar space-y-2">{transactionsInPeriod.length === 0 ? <p className="text-center text-xs text-slate-400 py-6">Kosong.</p> : transactionsInPeriod.map((item) => (<div key={item.id} className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-100 shadow-sm"><div className="flex items-center gap-2"><div className={`p-1.5 rounded-full ${item.tipe === 'masuk' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{item.tipe === 'masuk' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}</div><div><p className="text-xs font-bold text-slate-700">{item.nama}</p><p className="text-[10px] text-slate-400">{item.tanggal}</p></div></div><div className="text-right"><p className={`text-xs font-bold ${item.tipe === 'masuk' ? 'text-green-600' : 'text-red-600'}`}>{item.tipe === 'masuk' ? '+' : '-'} {formatRupiah(item.jumlah)}</p>{(isAdmin || isGuru) && <button onClick={() => handleDeleteKas(item.id)} className="text-[9px] text-slate-400 hover:text-red-500">Hapus</button>}</div></div>))}</div></div>)}{kasTab === 'input' && (isAdmin || isGuru) && (<div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-in fade-in"><form onSubmit={handleAddKas} className="space-y-3"><div className="grid grid-cols-2 gap-3"><input type="date" value={kasInput.tanggal} onChange={e => setKasInput({ ...kasInput, tanggal: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><select value={kasInput.tipe} onChange={e => setKasInput({ ...kasInput, tipe: e.target.value })} className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none"><option value="masuk">Masuk (+)</option><option value="keluar">Keluar (-)</option></select></div><div className="flex gap-2"><div className="w-1/3 relative"><input list="students" type="text" value={kasInput.nama} onChange={e => setKasInput({ ...kasInput, nama: e.target.value })} placeholder="Nama" className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><datalist id="students">{dataStudents.map(s => <option key={s.id} value={s.name} />)}</datalist></div><input type="text" value={kasInput.jumlah} onChange={handleJumlahChange} placeholder="Rp" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /><input type="text" value={kasInput.keterangan} onChange={e => setKasInput({ ...kasInput, keterangan: e.target.value })} placeholder="Ket" className="w-1/3 bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-700 outline-none" /></div><div className="border-t border-slate-200 pt-2"><input type="file" ref={buktiInputRef} onChange={handleBuktiChange} accept="image/*" className="hidden" id="buktiUpload" /><div className="flex justify-between items-center"><label htmlFor="buktiUpload" className="text-xs text-blue-600 cursor-pointer flex items-center gap-1 hover:underline font-medium"><ImageIcon size={14} /> {buktiPreview ? "Ganti Foto" : "Upload Bukti"}</label>{buktiPreview && <button type="button" onClick={clearBukti} className="text-red-500"><XCircle size={14} /></button>}</div></div><button className="w-full bg-[#00994d] hover:bg-green-700 text-white py-2.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-2"><Plus size={14} /> Simpan</button></form></div>)}</div></Modal>
-            <Modal isOpen={isNewsModalOpen} onClose={() => setIsNewsModalOpen(false)} title="Post Berita/Karya">
-                {(isAdmin || isGuru) ? (
-                    <form onSubmit={handlePostNews} className="space-y-4 animate-in fade-in">
-                        <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg border border-orange-200 dark:border-orange-800 mb-2 text-[11px] text-orange-800 dark:text-orange-300 flex gap-2">
-                            <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                            <p>Berita yang diposting akan tampil di Halaman Depan (Landing Page) dan bisa dilihat publik. Gambar akan dikompres otomatis.</p>
                         </div>
-                        <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul</label><input type="text" value={newsInput.title} onChange={e => setNewsInput({ ...newsInput, title: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white" placeholder="Judul Berita..." required /></div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Kategori</label><select value={newsInput.category} onChange={e => setNewsInput({ ...newsInput, category: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white"><option>Kegiatan</option><option>Prestasi</option><option>Karya Siswa</option><option>Info Sekolah</option></select></div>
-                            <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Upload Foto</label><input type="file" accept="image/*" ref={newsFileInputRef} onChange={handleNewsImageChange} className="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-300 hover:file:bg-slate-200" /></div>
-                        </div>
-                        {newsImagePreview && (
-                            <div className="relative h-32 w-full rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                                <img src={newsImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                                <button type="button" onClick={() => { setNewsImagePreview(null); setNewsInput({ ...newsInput, imageBase64: '' }); if (newsFileInputRef.current) newsFileInputRef.current.value = ''; }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"><X size={12} /></button>
-                            </div>
-                        )}
-                        <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Isi Berita</label><textarea value={newsInput.content} onChange={e => setNewsInput({ ...newsInput, content: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-24 dark:text-white" placeholder="Tulis detail berita..." required /></div>
-                        <button className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg font-bold text-sm shadow-md flex items-center justify-center gap-2"><UploadCloud size={16} /> Posting Berita</button>
                     </form>
-                ) : (
-                    <div className="text-center py-10 text-slate-400">
-                        <Lock size={40} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Hanya Guru/Admin yang boleh posting berita.</p>
-                        <button onClick={() => { setIsNewsModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Masuk Role Berhak</button>
-                    </div>
-                )}
-            </Modal>
-            <Modal isOpen={isGaleriModalOpen} onClose={() => setIsGaleriModalOpen(false)} title="Upload Galeri">
-                {(isAdmin || isGuru) ? (
-                    <form onSubmit={handlePostGaleri} className="space-y-4 animate-in fade-in">
-                        <div className="bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-200 dark:border-purple-800 mb-2 text-[11px] text-purple-800 dark:text-purple-300 flex gap-2">
-                            <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                            <p>Foto yang diupload akan muncul di halaman Galeri Publik. Ukuran otomatis dikompres (Max 20MB).</p>
-                        </div>
-                        <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Caption / Keterangan</label><input type="text" value={galeriInput.caption} onChange={e => setGaleriInput({ ...galeriInput, caption: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white" placeholder="Foto kegiatan apa..." /></div>
-                        <div><label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Upload Foto</label><input type="file" accept="image/*" ref={galeriFileInputRef} onChange={handleGaleriImageChange} className="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-300 hover:file:bg-slate-200" /></div>
 
-                        {galeriImagePreview && (
-                            <div className="relative h-40 w-full rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                                <img src={galeriImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                                <button type="button" onClick={() => { setGaleriImagePreview(null); setGaleriInput({ ...galeriInput, imageBase64: '' }); if (galeriFileInputRef.current) galeriFileInputRef.current.value = ''; }} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full shadow-md hover:bg-red-600"><X size={12} /></button>
-                            </div>
-                        )}
-                        <button className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2.5 rounded-lg font-bold text-sm shadow-md flex items-center justify-center gap-2"><UploadCloud size={16} /> Upload ke Galeri</button>
-                    </form>
-                ) : (
-                    <div className="text-center py-10 text-slate-400">
-                        <Lock size={40} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Login Guru/Admin dulu wak buat upload foto.</p>
-                        <button onClick={() => { setIsGaleriModalOpen(false); setIsLoginModalOpen(true); }} className="mt-4 text-blue-500 text-xs font-bold hover:underline">Masuk Role Berhak</button>
-                    </div>
-                )}
-            </Modal>
-            <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title="Tugas Baru"><form onSubmit={handleAddTask} className="space-y-4"><input value={newTask.judul} onChange={e => setNewTask({ ...newTask, judul: e.target.value })} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 outline-none focus:border-emerald-500" placeholder="Judul..." autoFocus /><input value={newTask.mapel} onChange={e => setNewTask({ ...newTask, mapel: e.target.value })} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 outline-none focus:border-emerald-500" placeholder="Mapel..." /><button className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700">Simpan</button></form></Modal>
-            <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Edit Jadwal"><form onSubmit={handleSaveSchedule} className="space-y-4"><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-emerald-500" placeholder="Mapel pisah koma..." /><button className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-green-700">Update</button></form></Modal>
-            <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast Info"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-emerald-500" /><button className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700">Kirim</button></form></Modal>
-            <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><div className="text-slate-500 text-xs mb-2">Pisahkan koma (Cth: Budi, Andi)</div><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-50 border-slate-200 rounded-xl p-3 text-slate-800 h-32 outline-none focus:border-orange-500" placeholder="Nama siswa..." /><button className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600">Simpan Piket</button></form></Modal>
-            <Modal isOpen={isQuoteModalOpen} onClose={() => setIsQuoteModalOpen(false)} title="Manage Quotes">
-                {isAdmin ? (
-                    <div className="space-y-6"><form onSubmit={handleAddQuote} className="space-y-3 pb-4 border-b border-slate-100"><input type="text" value={newQuoteText} onChange={e => setNewQuoteText(e.target.value)} className="w-full bg-white border-slate-300 rounded-lg p-2.5 text-slate-800 text-sm focus:border-blue-500 outline-none" placeholder="Kata mutiara..." /><button className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Tambah</button></form><div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar"><h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quotes DB ({dataQuotes.length})</h4>{loadingQuotes ? <p className="text-xs text-slate-400">Loading...</p> : dataQuotes.length === 0 ? <p className="text-xs text-slate-400 italic">Belum ada.</p> : dataQuotes.map((q) => (<div key={q.id} className="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group"><div><p className="text-sm text-slate-700 line-clamp-2">"{q.text}"</p><span className="text-[10px] text-slate-400">{q.author}</span></div><button onClick={() => handleDeleteQuote(q.id)} className="text-slate-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>))}</div></div>
-                ) : (
-                     <div className="text-center py-10 text-slate-400">
-                        <Lock size={40} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Hanya Admin yang boleh mengelola quotes.</p>
-                     </div>
-                )}
-            </Modal>
-            <Modal isOpen={isAbsenModalOpen} onClose={() => setIsAbsenModalOpen(false)} title="Data Absensi">
-                <div className="space-y-4">
-                    <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-3">
-                        <button onClick={() => setAbsenTab('view')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'view' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Eye size={14} /> Lihat Data</button>
-                        {(isAdmin || isGuru) && (<button onClick={() => setAbsenTab('input')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-2 ${absenTab === 'input' ? 'bg-white dark:bg-slate-800 text-red-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}><Edit3 size={14} /> Input Absensi</button>)}
-                    </div>
-                    {absenTab === 'view' && (
-                        <div className="space-y-4 animate-in fade-in">
-                            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-center border border-red-100 dark:border-red-800 mb-4">
-                                <p className="text-red-800 dark:text-red-300 text-xs font-bold uppercase tracking-wider">Total Siswa Tidak Hadir</p>
-                                <h2 className="text-3xl font-black text-red-600 dark:text-red-400">{countSakit + countIzin + countAlpha}</h2>
-                                <p className="text-[10px] text-red-400 font-medium">Hari Ini</p>
+                    {/* BAGIAN 2: LANDING PAGE */}
+                    {canViewAllSettings && (
+                        <form onSubmit={handleSaveLandingCountdown} className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                            <div className="flex items-center gap-2 mb-3 border-b border-green-200 dark:border-green-800 pb-2">
+                                <Monitor size={16} className="text-green-600 dark:text-green-400" />
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-green-800 dark:text-green-300">Widget Landing Page (Publik)</h4>
                             </div>
                             <div className="space-y-3">
-                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-yellow-200 dark:border-yellow-900/50 shadow-sm">
-                                    <h4 className="text-xs font-bold text-yellow-700 dark:text-yellow-400 flex items-center gap-2 mb-2"><AlertCircle size={14} /> Sakit ({countSakit})</h4>
-                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.sakit === '-' || !absenHariIni.sakit ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.sakit}</p>
+                                <div className="text-[10px] text-green-700 dark:text-green-400 bg-white/50 dark:bg-black/20 p-2 rounded">
+                                    Info: Countdown ini muncul di halaman depan website sekolah. Hanya Admin yang bisa edit.
                                 </div>
-                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-blue-200 dark:border-blue-900/50 shadow-sm">
-                                    <h4 className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-2 mb-2"><AlertCircle size={14} /> Izin ({countIzin})</h4>
-                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.izin === '-' || !absenHariIni.izin ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.izin}</p>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Judul Event Publik</label>
+                                    <input type="text" value={landingCountdownData.title} onChange={e => setLandingCountdownData({...landingCountdownData, title: e.target.value})} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" placeholder="Contoh: Penutupan PPDB" />
                                 </div>
-                                <div className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-red-200 dark:border-red-900/50 shadow-sm">
-                                    <h4 className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-2 mb-2"><AlertCircle size={14} /> Alpha ({countAlpha})</h4>
-                                    <p className="text-sm text-slate-700 dark:text-slate-200 font-medium">{absenHariIni.alpha === '-' || !absenHariIni.alpha ? <span className="text-slate-400 italic text-xs">Nihil</span> : absenHariIni.alpha}</p>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Waktu Target</label>
+                                    <input type="datetime-local" value={landingCountdownData.targetDate} onChange={e => setLandingCountdownData({...landingCountdownData, targetDate: e.target.value})} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-xs dark:text-white" />
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                        <button type="button" onClick={async () => { if(confirm("Hapus Landing Page Countdown?")) { await setDoc(doc(db, 'settings', 'landing_countdown'), { title: '', targetDate: '' }); setLandingCountdownData({ title: '', targetDate: '' }); triggerToast("Dihapus"); }}} className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold">Hapus</button>
+                                        <button type="submit" className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-xs font-bold shadow-sm">Simpan ke Publik</button>
                                 </div>
                             </div>
-                        </div>
-                    )}
-                    {absenTab === 'input' && (isAdmin || isGuru) && (
-                        <form onSubmit={handleSaveAbsensi} className="space-y-4 animate-in fade-in">
-                            <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-lg border border-slate-200 dark:border-slate-600 text-[11px] text-slate-500 dark:text-slate-300 mb-2 flex items-start gap-2">
-                                <AlertCircle size={14} className="shrink-0 mt-0.5 text-blue-500" />
-                                <p>Pisahkan nama dengan koma (cth: Budi, Andi). Kosongkan atau isi (-) jika nihil.</p>
-                            </div>
-                            <div><label className="block text-xs font-bold text-yellow-600 mb-1">Sakit</label><textarea value={absenInput.sakit} onChange={e => setAbsenInput({ ...absenInput, sakit: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
-                            <div><label className="block text-xs font-bold text-blue-600 mb-1">Izin</label><textarea value={absenInput.izin} onChange={e => setAbsenInput({ ...absenInput, izin: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
-                            <div><label className="block text-xs font-bold text-red-600 mb-1">Alpha</label><textarea value={absenInput.alpha} onChange={e => setAbsenInput({ ...absenInput, alpha: e.target.value })} className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-3 text-sm h-16 dark:text-white" /></div>
-                            <button className="w-full bg-red-600 text-white py-3 rounded-lg font-bold text-sm hover:bg-red-700">Update Data Absensi</button>
                         </form>
                     )}
                 </div>
             </Modal>
+            
+            {/* MODAL SETTINGS (Hanya Guru/Admin) */}
+            <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Pengaturan Kelas">
+                <div className="space-y-4">
+                    <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                        {canViewAllSettings && <button onClick={() => setSettingTab('ai')} className={`flex-1 py-2 text-xs font-bold rounded ${settingTab==='ai'?'bg-white dark:bg-slate-800 shadow':''}`}>AI & System</button>}
+                        {canViewClassSettings && <button onClick={() => setSettingTab('kas')} className={`flex-1 py-2 text-xs font-bold rounded ${settingTab==='kas'?'bg-white dark:bg-slate-800 shadow':''}`}>Data Kelas</button>}
+                    </div>
+
+                    {/* HANYA ADMIN YANG BISA EDIT AI */}
+                    {settingTab === 'ai' && canViewAllSettings && (
+                         <form onSubmit={handleSaveSettings} className="p-4 bg-slate-50 dark:bg-slate-700/50 border dark:border-slate-600 rounded-lg animate-in fade-in">
+                             <h4 className="font-bold text-sm mb-2 text-slate-700 dark:text-slate-300">Konfigurasi AI (Admin Only)</h4>
+                             <input type="text" placeholder="API Key Gemini..." value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)} className="w-full text-xs p-2 border rounded mb-2 dark:bg-slate-800"/>
+                             <textarea placeholder="Context Otak AI..." value={guestAiContext} onChange={e=>setGuestAiContext(e.target.value)} className="w-full text-xs p-2 border rounded h-20 dark:bg-slate-800"/>
+                             <button className="w-full bg-[#002f6c] text-white py-2 rounded text-xs font-bold mt-2">Simpan AI Config</button>
+                         </form>
+                    )}
+                    
+                    {/* SETTING KELAS (Guru) */}
+                    {settingTab === 'kas' && canViewClassSettings && (
+                        <form onSubmit={handleSaveSettings} className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg animate-in fade-in">
+                             <h4 className="font-bold text-sm mb-2 text-green-800 dark:text-green-400">Data Keuangan & Siswa</h4>
+                             <div className="flex gap-2 mt-2">
+                                <input type="number" placeholder="Saldo Awal Kas" value={saldoAwal} onChange={e=>setSaldoAwal(e.target.value)} className="flex-1 text-xs p-2 border rounded dark:bg-slate-800"/>
+                                <button className="bg-green-600 text-white px-3 py-2 rounded text-xs font-bold">Update Saldo</button>
+                             </div>
+                        </form>
+                    )}
+                </div>
+            </Modal>
+
+            {/* MODAL KAS */}
+            <Modal isOpen={isKasModalOpen} onClose={() => setIsKasModalOpen(false)} title={`Kas ${kelasId}`}>
+                 <div className="space-y-4">
+                     <div className="bg-[#00994d] p-4 rounded-lg shadow-md text-center text-white"><h2 className="text-3xl font-bold">{formatRupiah(totalSaldoAkhir)}</h2><p className="text-xs">Saldo Akhir</p></div>
+                     <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                        <button onClick={() => setKasTab('laporan')} className={`flex-1 py-1 text-xs font-bold rounded ${kasTab==='laporan' ? 'bg-white dark:bg-slate-800 shadow' : ''}`}>Laporan</button>
+                        {canManageKas && <button onClick={() => setKasTab('input')} className={`flex-1 py-1 text-xs font-bold rounded ${kasTab==='input' ? 'bg-white dark:bg-slate-800 shadow' : ''}`}>Input</button>}
+                     </div>
+                     {kasTab === 'input' && canManageKas && (
+                         <form onSubmit={handleAddKas} className="space-y-3 bg-slate-50 dark:bg-slate-700 p-3 rounded border dark:border-slate-600">
+                             <div className="flex gap-2"><input type="date" value={kasInput.tanggal} onChange={e=>setKasInput({...kasInput, tanggal: e.target.value})} className="border p-2 rounded text-xs dark:bg-slate-800"/> <select value={kasInput.tipe} onChange={e=>setKasInput({...kasInput, tipe: e.target.value})} className="border p-2 rounded text-xs dark:bg-slate-800"><option value="masuk">Masuk</option><option value="keluar">Keluar</option></select></div>
+                             <input type="text" placeholder="Nama / Keterangan" value={kasInput.nama} onChange={e=>setKasInput({...kasInput, nama: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/>
+                             <input type="text" placeholder="Jumlah (Rp)" value={kasInput.jumlah} onChange={handleJumlahChange} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/>
+                             <div className="border-t pt-2 dark:border-slate-600">
+                                <label className="text-xs font-bold block mb-1">Bukti Foto (Opsional)</label>
+                                <input type="file" onChange={handleBuktiChange} className="text-xs"/>
+                             </div>
+                             <button className="w-full bg-green-600 text-white py-2 rounded text-xs font-bold">Simpan Transaksi</button>
+                         </form>
+                     )}
+                     {kasTab === 'laporan' && (
+                         <div className="max-h-60 overflow-y-auto space-y-2">
+                             {transactionsInPeriod.map(t => (
+                                 <div key={t.id} className="flex justify-between items-center p-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded text-xs">
+                                     <div>
+                                         <span className="font-bold block">{t.nama}</span>
+                                         <span className="text-[10px] text-slate-500">{t.tanggal}</span>
+                                     </div>
+                                     <div className="text-right">
+                                        <span className={t.tipe==='masuk'?'text-green-600 font-bold block':'text-red-600 font-bold block'}>{formatRupiah(t.jumlah)}</span>
+                                        {canManageKas && <button onClick={() => handleDeleteKas(t.id)} className="text-[9px] text-red-400 underline">Hapus</button>}
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
+                     )}
+                 </div>
+            </Modal>
+
+            {/* MODAL ABSEN */}
+            <Modal isOpen={isAbsenModalOpen} onClose={() => setIsAbsenModalOpen(false)} title="Absensi Harian">
+                 {canInputAbsen && <div className="mb-3 bg-slate-100 dark:bg-slate-700 p-1 rounded flex"><button onClick={() => setAbsenTab('input')} className={`flex-1 py-1 text-xs font-bold rounded ${absenTab==='input'?'bg-white dark:bg-slate-800 shadow':''}`}>Mode Input</button><button onClick={() => setAbsenTab('view')} className={`flex-1 py-1 text-xs font-bold rounded ${absenTab==='view'?'bg-white dark:bg-slate-800 shadow':''}`}>Mode Lihat</button></div>}
+                 {absenTab === 'input' && canInputAbsen ? (
+                     <form onSubmit={handleSaveAbsensi} className="space-y-3">
+                         <div><label className="text-xs font-bold text-yellow-600">Sakit (Pisahkan koma)</label><textarea value={absenInput.sakit} onChange={e=>setAbsenInput({...absenInput, sakit: e.target.value})} className="w-full border p-2 rounded text-xs h-16 dark:bg-slate-800"/></div>
+                         <div><label className="text-xs font-bold text-blue-600">Izin (Pisahkan koma)</label><textarea value={absenInput.izin} onChange={e=>setAbsenInput({...absenInput, izin: e.target.value})} className="w-full border p-2 rounded text-xs h-16 dark:bg-slate-800"/></div>
+                         <div><label className="text-xs font-bold text-red-600">Alpha (Pisahkan koma)</label><textarea value={absenInput.alpha} onChange={e=>setAbsenInput({...absenInput, alpha: e.target.value})} className="w-full border p-2 rounded text-xs h-16 dark:bg-slate-800"/></div>
+                         <button className="w-full bg-red-600 text-white py-2 rounded text-xs font-bold">Update Absen</button>
+                     </form>
+                 ) : (
+                     <div className="space-y-3 text-sm">
+                         <div className="p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800 rounded"><span className="font-bold text-yellow-700 dark:text-yellow-400">Sakit:</span> {absenHariIni.sakit}</div>
+                         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded"><span className="font-bold text-blue-700 dark:text-blue-400">Izin:</span> {absenHariIni.izin}</div>
+                         <div className="p-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded"><span className="font-bold text-red-700 dark:text-red-400">Alpha:</span> {absenHariIni.alpha}</div>
+                     </div>
+                 )}
+            </Modal>
+
+            {/* MODAL MADING (Post News) */}
+            <Modal isOpen={isNewsModalOpen} onClose={() => setIsNewsModalOpen(false)} title="Mading Kelas">
+                 {canPostNews ? (
+                     <form onSubmit={handlePostNews} className="space-y-3">
+                         <input type="text" placeholder="Judul Berita" value={newsInput.title} onChange={e=>setNewsInput({...newsInput, title: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/>
+                         <select value={newsInput.category} onChange={e=>setNewsInput({...newsInput, category: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"><option>Kegiatan</option><option>Prestasi</option><option>Karya Siswa</option><option>Info Sekolah</option></select>
+                         <textarea placeholder="Isi Berita..." value={newsInput.content} onChange={e=>setNewsInput({...newsInput, content: e.target.value})} className="w-full border p-2 rounded text-xs h-24 dark:bg-slate-800"/>
+                         <input type="file" ref={newsFileInputRef} onChange={handleNewsImageChange} className="text-xs"/>
+                         {newsImagePreview && <img src={newsImagePreview} className="h-24 object-cover rounded"/>}
+                         <button className="w-full bg-orange-500 text-white py-2 rounded text-xs font-bold">Posting</button>
+                     </form>
+                 ) : <div className="text-center py-8 text-slate-400 text-xs">Hanya Pengurus Kelas yang boleh posting mading.</div>}
+            </Modal>
+
+            {/* MODAL GALERI */}
+            <Modal isOpen={isGaleriModalOpen} onClose={() => setIsGaleriModalOpen(false)} title="Upload Galeri">
+                 {canUploadGaleri ? (
+                     <form onSubmit={handlePostGaleri} className="space-y-3">
+                         <input type="text" placeholder="Caption Foto..." value={galeriInput.caption} onChange={e=>setGaleriInput({...galeriInput, caption: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/>
+                         <input type="file" ref={galeriFileInputRef} onChange={handleGaleriImageChange} className="text-xs"/>
+                         {galeriImagePreview && <img src={galeriImagePreview} className="h-40 w-full object-cover rounded"/>}
+                         <button className="w-full bg-purple-600 text-white py-2 rounded text-xs font-bold">Upload</button>
+                     </form>
+                 ) : <div className="text-center py-8 text-slate-400 text-xs">Hanya Pengurus Kelas yang boleh upload galeri.</div>}
+            </Modal>
+            
+            {/* MODAL TUGAS */}
+            <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title="Tambah Tugas"><form onSubmit={handleAddTask} className="space-y-3"><input placeholder="Judul Tugas" value={newTask.judul} onChange={e=>setNewTask({...newTask, judul: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/><input placeholder="Mapel" value={newTask.mapel} onChange={e=>setNewTask({...newTask, mapel: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800"/><button className="w-full bg-purple-600 text-white py-2 rounded text-xs font-bold">Simpan</button></form></Modal>
+            
+            {/* MODAL JADWAL */}
+            <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Edit Jadwal"><form onSubmit={handleSaveSchedule} className="space-y-4"><textarea value={scheduleInput} onChange={e => setScheduleInput(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border rounded-xl p-3 text-slate-800 dark:text-white h-32" placeholder="Mapel pisah koma..." /><button className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-green-700">Update</button></form></Modal>
+            
+            {/* MODAL PIKET */}
+            <Modal isOpen={isPiketModalOpen} onClose={() => setIsPiketModalOpen(false)} title={`Edit Piket (${hariPilihan})`}><form onSubmit={handleSavePiket} className="space-y-4"><textarea value={piketInput} onChange={e => setPiketInput(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border rounded-xl p-3 text-slate-800 dark:text-white h-32" placeholder="Nama siswa pisah koma..." /><button className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600">Simpan Piket</button></form></Modal>
+
+            {/* MODAL INFO BROADCAST */}
+            <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)} title="Broadcast Info"><form onSubmit={handleSaveInfo} className="space-y-4"><textarea value={infoInput} onChange={e => setInfoInput(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border rounded-xl p-3 text-slate-800 dark:text-white h-32" /><button className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700">Kirim</button></form></Modal>
+
             {/* MODAL AI ASSISTANT */}
             <Modal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} title="TKJ Assistant">
                 <div className="flex flex-col h-[50vh] md:h-[400px]">
-                    {/* Area Chat */}
                     <div className="flex-1 space-y-4 p-2 overflow-y-auto custom-scrollbar">
                         {chatHistory.map((msg, index) => (
                             <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`max-w-[85%] p-3 rounded-lg text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#002f6c] text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-bl-none'}`}>
                                     {msg.image && <img src={msg.image} alt="Upload" className="w-full rounded-lg mb-2 border border-white/20" />}
-                                    {msg.role === 'user' ? msg.text : <ReactMarkdown components={{ strong: ({ node, ...props }) => <span className="font-bold text-blue-600" {...props} />, a: ({ node, ...props }) => <a className="text-blue-500 underline" target="_blank" {...props} />, code: ({ node, ...props }) => <code className="bg-slate-200 px-1 py-0.5 rounded text-red-500 font-mono text-xs" {...props} /> }}>{msg.text}</ReactMarkdown>}
+                                    {msg.role === 'user' ? msg.text : <ReactMarkdown>{msg.text}</ReactMarkdown>}
                                 </div>
                             </div>
                         ))}
-                        {isTyping && <div className="flex justify-start"><div className="bg-slate-100 text-slate-500 px-4 py-2 rounded-lg text-xs border border-slate-200 animate-pulse">Mengetik...</div></div>}
+                        {isTyping && <div className="flex justify-start"><div className="bg-slate-100 text-slate-500 px-4 py-2 rounded-lg text-xs animate-pulse">Mengetik...</div></div>}
                         <div ref={chatEndRef} />
                     </div>
-
-                    {/* Preview Gambar Upload */}
                     {imagePreview && (
-                        <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-                            <div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border border-slate-300" /><span className="text-xs text-slate-500">Gambar siap dikirim</span></div>
+                        <div className="px-4 py-2 bg-slate-50 border-t flex justify-between items-center">
+                            <div className="flex items-center gap-3"><img src={imagePreview} alt="Preview" className="h-12 w-12 rounded object-cover border" /><span className="text-xs text-slate-500">Gambar siap dikirim</span></div>
                             <button onClick={clearImage} className="text-red-500 hover:bg-red-50 rounded-full p-1"><XCircle size={20} /></button>
                         </div>
                     )}
-
-                    {/* Input Form */}
-                    <form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t border-slate-100 pt-3">
-                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-100 hover:bg-slate-200 text-slate-500 p-3 rounded-xl transition-colors"><ImageIcon size={20} /></button>
+                    <form onSubmit={handleSendChat} className="mt-0 flex gap-2 border-t pt-3">
+                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-slate-100 hover:bg-slate-200 text-slate-500 p-3 rounded-xl"><ImageIcon size={20} /></button>
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                        <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-700 focus:outline-none focus:border-emerald-500 text-sm" />
-                        <button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white p-3 rounded-xl shadow-md"><Send size={20} /></button>
+                        <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Tanya / Upload gambar..." className="flex-1 bg-slate-50 border rounded-xl px-4 py-3 text-slate-700 text-sm" />
+                        <button type="submit" disabled={(!chatInput.trim() && !imageFile) || isTyping} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white p-3 rounded-xl"><Send size={20} /></button>
                     </form>
                 </div>
             </Modal>
-            {/* --- MODAL STRUKTUR ORGANISASI --- */}
-            <Modal isOpen={isStrukturModalOpen} onClose={() => setIsStrukturModalOpen(false)} title={`Struktur Organisasi Kelas ${kelasId}`}>
-                <div className="flex flex-col items-center justify-center py-6 min-h-[400px] animate-in fade-in zoom-in duration-300">
-                    
-                    {/* WALI KELAS (TOP) */}
-                    <div className="flex flex-col items-center relative z-10">
-                        <div className="w-20 h-20 rounded-full bg-slate-200 border-4 border-[#002f6c] dark:border-blue-500 overflow-hidden shadow-lg mb-2">
-                             {/* Ganti src dengan foto guru jika ada */}
-                             <img src="https://ui-avatars.com/api/?name=Wali+Kelas&background=0D8ABC&color=fff" alt="Wali Kelas" />
-                        </div>
-                        <div className="bg-[#002f6c] dark:bg-blue-600 text-white px-4 py-1 rounded-full font-bold text-xs shadow-md mb-1">Wali Kelas</div>
-                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">Bapak/Ibu Guru</p>
+            
+            {/* MODAL STRUKTUR ORGANISASI (DYNAMIC & EDITABLE) */}
+            <Modal isOpen={isStrukturModalOpen} onClose={() => {setIsStrukturModalOpen(false); setIsEditingStruktur(false)}} title={`Struktur Organisasi ${kelasId}`}>
+                
+                {/* TOMBOL EDIT (Hanya untuk Admin/Guru) */}
+                {canManageUsers && (
+                    <div className="flex justify-end mb-2">
+                        <button onClick={() => setIsEditingStruktur(!isEditingStruktur)} className={`text-xs font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors ${isEditingStruktur ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>
+                            {isEditingStruktur ? <X size={14}/> : <Edit3 size={14}/>} {isEditingStruktur ? 'Batal' : 'Edit Struktur'}
+                        </button>
                     </div>
+                )}
 
-                    {/* GARIS PENGHUBUNG VERTIKAL */}
-                    <div className="h-12 w-0.5 bg-slate-300 dark:bg-slate-600 my-1"></div>
-
-                    {/* KETUA KELAS (MIDDLE) */}
-                    <div className="flex flex-col items-center relative z-10">
-                        <div className="bg-orange-500 text-white px-4 py-1 rounded-full font-bold text-xs shadow-md mb-1 relative">
-                            Ketua Kelas
-                            {/* Garis Cabang ke Bawah */}
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0.5 h-8 bg-slate-300 dark:bg-slate-600"></div>
-                            {/* Garis Horizontal Cabang */}
-                            <div className="absolute top-[2rem] left-1/2 -translate-x-1/2 w-[160px] h-0.5 bg-slate-300 dark:bg-slate-600"></div>
-                            {/* Garis Turun Kiri */}
-                            <div className="absolute top-[2rem] left-1/2 -translate-x-[80px] w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
-                            {/* Garis Turun Kanan */}
-                            <div className="absolute top-[2rem] left-1/2 translate-x-[80px] w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
+                {/* MODE EDIT */}
+                {isEditingStruktur ? (
+                    <form onSubmit={handleSaveStruktur} className="space-y-3 animate-in fade-in">
+                        <div><label className="text-[10px] font-bold uppercase text-slate-500">Kepala Jurusan (Kajur)</label><input type="text" value={strukturData.kajur} onChange={e => setStrukturData({...strukturData, kajur: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
+                        <div><label className="text-[10px] font-bold uppercase text-slate-500">Wali Kelas</label><input type="text" value={strukturData.wali_kelas} onChange={e => setStrukturData({...strukturData, wali_kelas: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Ketua Kelas</label><input type="text" value={strukturData.ketua} onChange={e => setStrukturData({...strukturData, ketua: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
+                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Wakil Ketua</label><input type="text" value={strukturData.wakil} onChange={e => setStrukturData({...strukturData, wakil: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
                         </div>
-                        <div className="w-16 h-16 rounded-full bg-orange-100 border-2 border-orange-500 overflow-hidden mb-1">
-                            <img src="https://ui-avatars.com/api/?name=KM&background=f97316&color=fff" alt="KM" />
+                        <div className="grid grid-cols-2 gap-2">
+                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Sekretaris</label><input type="text" value={strukturData.sekretaris} onChange={e => setStrukturData({...strukturData, sekretaris: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
+                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Bendahara</label><input type="text" value={strukturData.bendahara} onChange={e => setStrukturData({...strukturData, bendahara: e.target.value})} className="w-full border p-2 rounded text-xs dark:bg-slate-800 dark:border-slate-600"/></div>
                         </div>
-                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">Nama KM</p>
-                    </div>
-
-                    {/* JARAK ANTARA KM DAN BAWAHAN */}
-                    <div className="h-10"></div>
-
-                    {/* SEKRETARIS & BENDAHARA (BOTTOM ROW) */}
-                    <div className="flex gap-12 relative z-10 mt-2">
-                        {/* Sekretaris */}
-                        <div className="flex flex-col items-center">
-                            <div className="bg-teal-500 text-white px-3 py-1 rounded-full font-bold text-[10px] shadow-md mb-1">Sekretaris</div>
-                             <div className="w-14 h-14 rounded-full bg-teal-100 border-2 border-teal-500 overflow-hidden mb-1">
-                                <img src="https://ui-avatars.com/api/?name=Sekretaris&background=14b8a6&color=fff" alt="Sekretaris" />
+                        <button className="w-full bg-[#002f6c] text-white py-2 rounded text-xs font-bold mt-2">Simpan Perubahan</button>
+                    </form>
+                ) : (
+                    /* MODE VIEW (BAGAN) */
+                    <div className="flex flex-col items-center py-4 min-h-[400px] w-full animate-in zoom-in duration-300">
+                        {/* LEVEL 1: KAJUR */}
+                        <div className="flex flex-col items-center w-full">
+                            <div className="bg-[#002f6c] text-white w-3/4 md:w-1/2 py-2 rounded-lg shadow-md text-center relative z-10 border-b-4 border-blue-800">
+                                <span className="text-[10px] font-bold opacity-70 uppercase tracking-widest block">Kepala Jurusan</span>
+                                <span className="text-sm font-bold block">{strukturData.kajur}</span>
                             </div>
-                            <p className="font-bold text-slate-700 dark:text-slate-300 text-xs">Nama Sekretaris</p>
+                            <div className="h-6 w-0.5 bg-slate-300 dark:bg-slate-600"></div>
                         </div>
-
-                        {/* Bendahara */}
-                        <div className="flex flex-col items-center">
-                            <div className="bg-pink-500 text-white px-3 py-1 rounded-full font-bold text-[10px] shadow-md mb-1">Bendahara</div>
-                             <div className="w-14 h-14 rounded-full bg-pink-100 border-2 border-pink-500 overflow-hidden mb-1">
-                                <img src="https://ui-avatars.com/api/?name=Bendahara&background=ec4899&color=fff" alt="Bendahara" />
+                        {/* LEVEL 2: WALI KELAS */}
+                        <div className="flex flex-col items-center w-full">
+                            <div className="bg-white dark:bg-slate-700 border-2 border-[#00994d] text-slate-800 dark:text-slate-200 w-3/4 md:w-1/2 py-2 rounded-lg shadow-sm text-center relative z-10">
+                                <span className="text-[10px] font-bold text-[#00994d] uppercase tracking-widest block">Wali Kelas</span>
+                                <span className="text-sm font-bold block">{strukturData.wali_kelas}</span>
                             </div>
-                            <p className="font-bold text-slate-700 dark:text-slate-300 text-xs">Nama Bendahara</p>
+                            <div className="h-8 w-0.5 bg-slate-300 dark:bg-slate-600"></div>
+                        </div>
+                        {/* GARIS CABANG */}
+                        <div className="relative w-3/4 h-4 border-t-2 border-slate-300 dark:border-slate-600 mb-2">
+                             <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-slate-300 dark:bg-slate-600"></div>
+                             <div className="absolute top-0 left-0 w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
+                             <div className="absolute top-0 right-0 w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
+                        </div>
+                        {/* LEVEL 3: KETUA & WAKIL */}
+                        <div className="grid grid-cols-2 gap-4 w-full mb-6">
+                            <div className="flex flex-col items-center">
+                                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 w-full py-2 rounded shadow-sm text-center">
+                                    <span className="text-[9px] font-bold text-orange-600 uppercase block">Ketua Kelas</span>
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{strukturData.ketua}</span>
+                                </div>
+                                <div className="h-4 w-0.5 bg-slate-300 dark:bg-slate-600"></div>
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 w-full py-2 rounded shadow-sm text-center">
+                                    <span className="text-[9px] font-bold text-orange-600 uppercase block">Wakil Ketua</span>
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{strukturData.wakil}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {/* LEVEL 4: SEKRETARIS & BENDAHARA */}
+                        <div className="relative w-3/4 h-4 border-t-2 border-slate-300 dark:border-slate-600 mb-2">
+                             <div className="absolute -top-6 left-1/4 w-0.5 h-6 bg-slate-300 dark:bg-slate-600"></div> 
+                             <div className="absolute top-0 left-0 w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
+                             <div className="absolute top-0 right-0 w-0.5 h-4 bg-slate-300 dark:bg-slate-600"></div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 w-full">
+                            <div className="bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 w-full py-2 rounded shadow-sm text-center">
+                                <span className="text-[9px] font-bold text-teal-600 uppercase block">Sekretaris</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{strukturData.sekretaris}</span>
+                            </div>
+                            <div className="bg-pink-50 dark:bg-pink-900/20 border border-pink-200 dark:border-pink-800 w-full py-2 rounded shadow-sm text-center">
+                                <span className="text-[9px] font-bold text-pink-600 uppercase block">Bendahara</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{strukturData.bendahara}</span>
+                            </div>
                         </div>
                     </div>
-
-                    <div className="mt-8 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-center w-full">
-                        <p className="text-[10px] text-slate-400">Struktur ini statis. Hubungi Admin untuk update foto/nama.</p>
-                    </div>
-
-                </div>
+                )}
             </Modal>
         </div>
     )
