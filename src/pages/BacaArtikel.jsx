@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Calendar, Eye, Download, FileText, Sparkles } from 'lucide-react';
 import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../services/firebase";
-import LibraryAiModal from '../components/dashboard/modals/LibraryAiModal';
+import LibraryAiModal from '../components/library/LibraryAiModal';
 
 export default function BacaArtikel() {
   const { id } = useParams();

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Send, Bot, Sparkles, Loader2 } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "../../../services/firebase";
-import ModalWrapper from '../../ui/ModalWrapper';
+import { db } from "../../services/firebase"; 
+import ModalWrapper from "../ui/ModalWrapper";
 
 export default function LibraryAiModal({ isOpen, onClose, articleTitle, articleContent }) {
     const [chatInput, setChatInput] = useState('');
