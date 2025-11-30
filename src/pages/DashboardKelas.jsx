@@ -22,6 +22,7 @@ import PiketWidget from '../components/dashboard/widgets/PiketWidget';
 import CountdownWidget from '../components/dashboard/widgets/CountdownWidget';
 import JadwalWidget from '../components/dashboard/widgets/JadwalWidget';
 import TugasWidget from '../components/dashboard/widgets/TugasWidget';
+import EbookModal from '../components/dashboard/modals/EbookModal';
 
 // Components: Modals
 import AiChatModal from '../components/dashboard/modals/AiChatModal';
@@ -146,7 +147,7 @@ export default function DashboardKelas({ kelasId }) {
 
                 <div className="md:col-span-4 space-y-6">
                     <KasWidget totalSaldo={totalSaldo} onClick={() => setActiveModal('kas')} />
-                    <QuickMenuWidget onOpenNews={() => setActiveModal('news')} onOpenGaleri={() => setActiveModal('galeri')} onOpenAi={() => setActiveModal('ai')} onOpenStruktur={() => setActiveModal('struktur')} permissions={perms} />
+                    <QuickMenuWidget onOpenNews={() => setActiveModal('news')} onOpenGaleri={() => setActiveModal('galeri')} onOpenAi={() => setActiveModal('ai')} onOpenStruktur={() => setActiveModal('struktur')} onOpenEbook={() => setActiveModal('ebook')} permissions={perms} />
                     <PiketWidget piketHariIni={piketTampil} isLibur={isLibur} canEdit={perms.canManagePiket} onEdit={() => setActiveModal('piket')} />
                 </div>
 
@@ -169,6 +170,7 @@ export default function DashboardKelas({ kelasId }) {
             {activeModal === 'struktur' && <StrukturModal isOpen={true} onClose={closeModal} kelasId={kelasId} canEdit={perms.canManageUsers} />}
             {activeModal === 'countdown' && <CountdownModal isOpen={true} onClose={closeModal} canEditLanding={perms.canEditLanding} />}
             {activeModal === 'settings' && <SettingsModal isOpen={true} onClose={closeModal} kelasId={kelasId} canAccessAI={perms.canEditLanding} canAccessClass={perms.canViewSettings} />}
+            {activeModal === 'ebook' && <EbookModal isOpen={true} onClose={closeModal} kelasId={kelasId} />}
             
             {activeModal === 'info' && (
                 <ModalWrapper isOpen={true} onClose={closeModal} title="Edit Info Sekolah">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-    Users, LayoutDashboard, Tag, BookOpen, 
+import {
+    Users, LayoutDashboard, Tag, BookOpen,
     Menu, Monitor, X, MapPin, Phone, Instagram, Facebook, Mail, ArrowRight,
     LogIn, LogOut, Loader2
 } from 'lucide-react';
@@ -10,21 +10,24 @@ import logoJurusan from '../assets/images/logotkj.jpg';
 // Firebase
 import { collection, query, getDocs, limit, orderBy, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
 
 // Components Refactored
 import NavbarWidget from '../components/landing/NavbarWidget';
 import HeroSection from '../components/landing/HeroSection';
 import EventBanner from '../components/landing/EventBanner';
 import NewsSection from '../components/landing/NewsSection';
-import ModalWrapper from '../components/ui/ModalWrapper'; // Pakai ModalWrapper generic kita
+import ModalWrapper from '../components/ui/ModalWrapper';
+import JoinCTA from '../components/landing/JoinCTA';
+
+
 
 export default function LandingPage() {
     const navigate = useNavigate();
     const { user, login, register, logout } = useAuth();
-    
+
     // STATE MODALS
-    const [isEditCountdownOpen, setIsEditCountdownOpen] = useState(false); 
+    const [isEditCountdownOpen, setIsEditCountdownOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isLoginOpen, setIsLoginOpen] = useState(false);
     const [isRegisterOpen, setIsRegisterOpen] = useState(false);
@@ -129,17 +132,17 @@ export default function LandingPage() {
     }, [landingCountdown]);
 
     // --- SAVE COUNTDOWN HANDLER ---
-    const handleSaveCountdown = async (e) => { 
-        e.preventDefault(); 
-        try { 
-            await setDoc(doc(db, 'settings', 'landing_countdown'), { 
-                title: landingCountdown.title, 
-                targetDate: landingCountdown.targetDate, 
-                updatedAt: serverTimestamp() 
-            }); 
-            alert("Countdown Landing Page berhasil diupdate!"); 
-            setIsEditCountdownOpen(false); 
-        } catch (e) { alert("Gagal update: " + e.message); } 
+    const handleSaveCountdown = async (e) => {
+        e.preventDefault();
+        try {
+            await setDoc(doc(db, 'settings', 'landing_countdown'), {
+                title: landingCountdown.title,
+                targetDate: landingCountdown.targetDate,
+                updatedAt: serverTimestamp()
+            });
+            alert("Countdown Landing Page berhasil diupdate!");
+            setIsEditCountdownOpen(false);
+        } catch (e) { alert("Gagal update: " + e.message); }
     };
 
     return (
@@ -174,7 +177,7 @@ export default function LandingPage() {
                                         <span className="block text-white text-xs font-bold leading-none">{user.displayName?.split(' ')[0]}</span>
                                         <span className="text-[10px] text-emerald-300 uppercase">{user.role}</span>
                                     </div>
-                                    <button onClick={navigateToDashboard} className="bg-emerald-500 hover:bg-emerald-600 text-white p-2 rounded-lg transition-colors shadow-sm" title="Dashboard"><LayoutDashboard size={18}/></button>
+                                    <button onClick={navigateToDashboard} className="bg-emerald-500 hover:bg-emerald-600 text-white p-2 rounded-lg transition-colors shadow-sm" title="Dashboard"><LayoutDashboard size={18} /></button>
                                     <button onClick={logout} className="bg-white/10 hover:bg-red-500 hover:text-white text-blue-200 p-2 rounded-lg transition-colors" title="Logout"><LogOut size={18} /></button>
                                 </div>
                             ) : (
@@ -217,6 +220,8 @@ export default function LandingPage() {
             <EventBanner landingCountdown={landingCountdown} timeLeftEvent={timeLeftEvent} isAdmin={isAdmin} onEdit={() => setIsEditCountdownOpen(true)} />
             <NewsSection featuredNews={featuredNews} navigate={navigate} />
 
+            <JoinCTA />
+
             {/* FOOTER (Simple enough to keep inline or extract if needed) */}
             <footer className="bg-[#002f6c] text-white pt-20 pb-10 border-t-8 border-[#00994d] w-full">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -229,7 +234,12 @@ export default function LandingPage() {
                             <p className="text-blue-100 text-sm leading-relaxed opacity-80">Mewujudkan teknisi yang kompeten, berakhlak mulia, dan siap bersaing di dunia industri global.</p>
                             <div className="flex gap-3">
                                 <a href="#" className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center hover:bg-[#00994d] hover:border-[#00994d] transition-all"><Instagram size={18} /></a>
-                                <a href="#" className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center hover:bg-[#00994d] hover:border-[#00994d] transition-all"><Facebook size={18} /></a>
+                                <a href="https://tiktok.com/@smkmuh1metro" target="_blank" rel="noreferrer" className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center hover:bg-[#00994d] hover:border-[#00994d] transition-all group">
+                                    {/* Icon TikTok Custom SVG */}
+                                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white group-hover:scale-110 transition-transform">
+                                        <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 1 0 7.75 6.82V9.17a7.18 7.18 0 0 0 2.22 1.18V6.61a3.62 3.62 0 0 1-.74-.08Z" />
+                                    </svg>
+                                </a>
                                 <a href="mailto:tkj@smkmuh1metro.sch.id" className="w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center hover:bg-[#00994d] hover:border-[#00994d] transition-all"><Mail size={18} /></a>
                             </div>
                         </div>
@@ -237,7 +247,7 @@ export default function LandingPage() {
                             <h4 className="font-bold text-lg mb-8 flex items-center gap-2 text-white">Hubungi Kami</h4>
                             <ul className="space-y-5 text-sm text-blue-100">
                                 <li className="flex items-start gap-4 group"><div className="bg-white/10 p-2 rounded-lg text-emerald-400 group-hover:bg-[#00994d] group-hover:text-white transition-colors"><MapPin size={18} /></div><span className="leading-relaxed">Jl. Tawes, Yosodadi, Kec. Metro Timur, Kota Metro, Lampung 34111</span></li>
-                                <li className="flex items-center gap-4 group"><div className="bg-white/10 p-2 rounded-lg text-emerald-400 group-hover:bg-[#00994d] group-hover:text-white transition-colors"><Phone size={18} /></div><span>+62 725 41926</span></li>
+                                <li className="flex items-center gap-4 group"><div className="bg-white/10 p-2 rounded-lg text-emerald-400 group-hover:bg-[#00994d] group-hover:text-white transition-colors"><Phone size={18} /></div><span>+62 895-6328-76627</span></li>
                             </ul>
                         </div>
                         <div>
@@ -252,7 +262,7 @@ export default function LandingPage() {
                     </div>
                     <div className="border-t border-white/10 pt-8 text-center flex flex-col md:flex-row justify-between items-center gap-4">
                         <p className="text-xs text-blue-300 font-medium">© 2025 TKJ SMK Muhammadiyah 1 Metro.</p>
-                        <p className="text-xs text-blue-400 font-medium flex items-center gap-1">Developed with ❤️ by <span className="text-white font-bold">Rafiantara</span></p>
+                        <p className="text-xs text-blue-400 font-medium flex items-center gap-1">Developed with by <span className="text-white font-bold">Rafiantara</span></p>
                     </div>
                 </div>
             </footer>
@@ -289,15 +299,15 @@ export default function LandingPage() {
                     <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-xs mb-2">Info: Countdown ini akan dilihat oleh semua pengunjung website (Tamu/Siswa/Guru).</div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Nama Event</label>
-                        <input type="text" className="w-full border p-2 rounded text-sm" placeholder="Contoh: PPDB Gelombang 1" value={landingCountdown.title} onChange={e => setLandingCountdown({...landingCountdown, title: e.target.value})} required/>
+                        <input type="text" className="w-full border p-2 rounded text-sm" placeholder="Contoh: PPDB Gelombang 1" value={landingCountdown.title} onChange={e => setLandingCountdown({ ...landingCountdown, title: e.target.value })} required />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Waktu Target</label>
-                        <input type="datetime-local" className="w-full border p-2 rounded text-sm" value={landingCountdown.targetDate || ''} onChange={e => setLandingCountdown({...landingCountdown, targetDate: e.target.value})} required/>
+                        <input type="datetime-local" className="w-full border p-2 rounded text-sm" value={landingCountdown.targetDate || ''} onChange={e => setLandingCountdown({ ...landingCountdown, targetDate: e.target.value })} required />
                     </div>
                     <div className="flex gap-2 pt-2">
                         <button type="button" onClick={async () => {
-                            if(confirm("Hapus Countdown?")) {
+                            if (confirm("Hapus Countdown?")) {
                                 await setDoc(doc(db, 'settings', 'landing_countdown'), { title: '', targetDate: '' });
                                 setLandingCountdown({ title: '', targetDate: '' });
                                 setIsEditCountdownOpen(false);

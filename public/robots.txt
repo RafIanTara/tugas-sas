@@ -1,0 +1,14 @@
+# Aturan untuk semua robot pencari (Google, Bing, Yahoo)
+User-agent: *
+
+# BOLEH masuk ke halaman depan
+Allow: /
+
+# DILARANG masuk ke halaman Dashboard (Privasi)
+Disallow: /dashboard-kelas-x/
+Disallow: /dashboard-kelas-xi/
+Disallow: /dashboard-kelas-xii/
+Disallow: /admin/
+
+# Peta Situs (Opsional, biarkan default dulu)
+Sitemap: https://tkj.smkmuh1metro.sch.id/sitemap.xml

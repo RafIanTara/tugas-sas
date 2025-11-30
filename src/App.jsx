@@ -2,7 +2,7 @@ import React from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 
 // Import Auth Provider
-import { AuthProvider } from './context/AuthContext' // <--- TAMBAHAN
+import { AuthProvider } from './context/AuthContext'
 
 // Import Halaman Utama
 import LandingPage from './pages/LandingPage'
@@ -14,8 +14,8 @@ import EbookPage from './pages/EbookPage'
 import BacaArtikel from './pages/BacaArtikel'
 
 // Import Halaman Auth (BARU)
-import LoginPage from './pages/LoginPage'     // <--- TAMBAHAN
-import RegisterPage from './pages/RegisterPage' // <--- TAMBAHAN
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 
 // Import Component Chat Tamu
 import GuestChat from './components/GuestChat'

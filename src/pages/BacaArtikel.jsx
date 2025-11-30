@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, Calendar, Eye, Download, FileText } from 'lucide-react'
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore"
-import { db } from "../services/firebase"
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, User, Calendar, Eye, Download, FileText, Sparkles } from 'lucide-react';
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { db } from "../services/firebase";
+import LibraryAiModal from '../components/dashboard/modals/LibraryAiModal';
 
 export default function BacaArtikel() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [article, setArticle] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [article, setArticle] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAiOpen, setIsAiOpen] = useState(false);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -30,12 +32,12 @@ export default function BacaArtikel() {
         }
     }
     fetchDetail();
-  }, [id, navigate])
+  }, [id, navigate]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin w-10 h-10 border-4 border-[#002f6c] border-t-transparent rounded-full"></div></div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin w-10 h-10 border-4 border-[#002f6c] border-t-transparent rounded-full"></div></div>;
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-800">
+    <div className="min-h-screen bg-white font-sans text-slate-800 relative">
         
         {/* Navbar sticky simple */}
         <div className="sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-100 z-50 px-4 py-3 shadow-sm">
@@ -43,13 +45,24 @@ export default function BacaArtikel() {
                 <button onClick={() => navigate('/ebook')} className="flex items-center gap-2 text-slate-500 hover:text-[#002f6c] text-sm font-bold transition-colors">
                     <ArrowLeft size={18}/> Kembali
                 </button>
-                <span className="text-xs font-bold text-[#00994d] bg-green-50 px-3 py-1 rounded-full uppercase tracking-wider">
-                    {article.category || 'Materi'}
-                </span>
+                
+                <div className="flex items-center gap-3">
+                    {/* TOMBOL AI DESKTOP */}
+                    <button 
+                        onClick={() => setIsAiOpen(true)}
+                        className="hidden md:flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm animate-in fade-in"
+                    >
+                        <Sparkles size={14}/> Tanya AI
+                    </button>
+
+                    <span className="text-xs font-bold text-[#00994d] bg-green-50 px-3 py-1 rounded-full uppercase tracking-wider">
+                        {article.category || 'Materi'}
+                    </span>
+                </div>
             </div>
         </div>
 
-        <article className="max-w-3xl mx-auto px-4 py-10">
+        <article className="max-w-3xl mx-auto px-4 py-10 pb-32">
             {/* Header Artikel */}
             <h1 className="text-3xl md:text-4xl font-black text-[#002f6c] leading-tight mb-6">
                 {article.title}
@@ -83,7 +96,17 @@ export default function BacaArtikel() {
                 </div>
             )}
 
-            {/* TOMBOL DOWNLOAD (JIKA ADA LINK) */}
+            {/* --- DESKRIPSI SINGKAT (INTRO) --- */}
+            {/* INI BAGIAN YANG BARU DITAMBAHKAN */}
+            {article.desc && (
+                <div className="bg-slate-50 border-l-4 border-[#002f6c] p-5 mb-8 rounded-r-lg">
+                    <p className="text-slate-600 italic font-medium leading-relaxed">
+                        "{article.desc}"
+                    </p>
+                </div>
+            )}
+
+            {/* Link Download */}
             {article.link_download && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mb-10 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
                     <div className="flex items-center gap-4">
@@ -101,13 +124,15 @@ export default function BacaArtikel() {
                 </div>
             )}
 
-            {/* ISI KONTEN */}
+            {/* Isi Konten Utama */}
             <div className="prose prose-lg prose-slate max-w-none prose-headings:font-bold prose-headings:text-[#002f6c] prose-a:text-blue-600 prose-img:rounded-xl prose-p:leading-relaxed text-slate-700">
-                {/* Render HTML atau Teks biasa dengan Newline */}
                 {article.content ? (
                     <div dangerouslySetInnerHTML={{ __html: article.content.replace(/\n/g, '<br/>') }} />
                 ) : (
-                    <p className="italic text-slate-400 text-center">Tidak ada deskripsi tambahan.</p>
+                    // Jika konten kosong, tidak menampilkan pesan error, karena mungkin cuma ada deskripsi/link
+                    <div className="text-center py-4 border-t border-dashed border-slate-200 mt-4">
+                        <p className="text-slate-400 text-sm italic">*** Akhir Deskripsi Materi ***</p>
+                    </div>
                 )}
             </div>
 
@@ -117,6 +142,29 @@ export default function BacaArtikel() {
         <div className="bg-slate-50 border-t border-slate-200 py-10 text-center mt-10">
             <p className="text-slate-400 text-sm font-medium">© E-Library TKJ SMK Muhammadiyah 1 Metro</p>
         </div>
+
+        {/* --- TOMBOL AI MOBILE (Floating Kiri Bawah) --- */}
+        <button 
+            onClick={() => setIsAiOpen(true)}
+            className="fixed bottom-6 left-6 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-4 rounded-full shadow-2xl flex items-center gap-2 font-bold transition-all transform hover:scale-105 z-40 group animate-in slide-in-from-bottom-10 md:hidden"
+        >
+            <Sparkles className="animate-pulse" size={20}/>
+            <span>Tanya AI</span>
+        </button>
+
+        {/* --- MODAL AI --- */}
+        <LibraryAiModal 
+            isOpen={isAiOpen} 
+            onClose={() => setIsAiOpen(false)} 
+            articleTitle={article.title}
+            // Kita gabungkan Judul + Deskripsi + Konten biar AI makin pinter
+            articleContent={`
+                Judul: ${article.title}
+                Deskripsi: ${article.desc || '-'}
+                Isi Materi: ${article.content || '-'}
+            `}
+        />
+
     </div>
-  )
+  );
 }
