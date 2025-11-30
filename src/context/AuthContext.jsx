@@ -14,7 +14,7 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 // GANTI DENGAN EMAIL ASLI ANDA
-const SUPER_ADMIN_EMAIL = "rafiantara@gmail.com"; 
+const SUPER_ADMIN_EMAIL = "daus@admin.com"; 
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
