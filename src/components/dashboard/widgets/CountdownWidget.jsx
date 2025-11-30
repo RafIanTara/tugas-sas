@@ -1,77 +1,95 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Edit3, Clock } from 'lucide-react';
+import { Edit3, Clock, Rocket } from 'lucide-react';
 
 export default function CountdownWidget({ targetDate, title, canManage, onEdit }) {
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
     useEffect(() => {
         if (!targetDate) return;
-        const iv = setInterval(() => {
-            const diff = new Date(targetDate) - new Date();
+
+        const interval = setInterval(() => {
+            const now = new Date();
+            const target = new Date(targetDate);
+            const diff = target - now;
+
             if (diff > 0) {
                 setTimeLeft({
-                    days: Math.floor(diff / (864e5)),
-                    hours: Math.floor((diff % 864e5) / 36e5),
-                    minutes: Math.floor((diff % 36e5) / 6e4),
-                    seconds: Math.floor((diff % 6e4) / 1e3)
+                    days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+                    hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+                    minutes: Math.floor((diff / 1000 / 60) % 60),
+                    seconds: Math.floor((diff / 1000) % 60),
                 });
             } else {
                 setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                clearInterval(interval);
             }
         }, 1000);
-        return () => clearInterval(iv);
+
+        return () => clearInterval(interval);
     }, [targetDate]);
 
-    // Jika belum ada countdown diset
-    if (!targetDate) {
-        if (!canManage) return null; // Siswa gak liat apa2
-        return (
-            <div onClick={onEdit} className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-[#002f6c] transition-colors group flex flex-col items-center justify-center h-32">
-                <Clock size={24} className="text-slate-400 group-hover:text-[#002f6c] mb-2"/>
-                <p className="text-sm font-bold text-slate-500 group-hover:text-[#002f6c]">Setup Hitung Mundur Event</p>
-            </div>
-        );
-    }
+    // Jika tidak ada event
+    if (!targetDate && !canManage) return null;
+
+    if (!targetDate && canManage) return (
+        <div onClick={onEdit} className="bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-500 hover:text-blue-500 transition-all group h-full min-h-[160px]">
+            <Clock size={24} className="mb-2 group-hover:scale-110 transition-transform"/>
+            <span className="text-xs font-bold">Set Countdown Event</span>
+        </div>
+    );
 
     return (
-        <div className="bg-gradient-to-r from-[#002f6c] to-[#004bb5] rounded-xl shadow-lg p-6 text-white relative overflow-hidden group">
+        <div className="bg-gradient-to-br from-[#002f6c] to-blue-900 rounded-xl p-5 text-white relative overflow-hidden shadow-lg group">
             {/* Background Decoration */}
-            <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all"></div>
-            
-            {/* EDIT BUTTON */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/20 rounded-full blur-xl -ml-10 -mb-5 pointer-events-none"></div>
+
+            {/* Tombol Edit (Hanya muncul jika punya izin) */}
             {canManage && (
                 <button 
                     onClick={onEdit} 
-                    className="absolute top-3 right-3 bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors z-20" 
-                    title="Edit Countdown"
+                    className="absolute top-3 right-3 p-1.5 bg-white/10 hover:bg-white/20 rounded-lg backdrop-blur-sm transition-all z-20"
                 >
-                    <Edit3 size={16}/>
+                    <Edit3 size={14} className="text-white"/>
                 </button>
             )}
 
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-                <div className="text-center md:text-left flex-1 min-w-0">
-                    <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-                        <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">Coming Soon</span>
-                        <Calendar size={14} className="text-blue-200"/>
+            {/* Konten Utama: FLEX COL (Vertikal) biar muat di sidebar */}
+            <div className="relative z-10 flex flex-col h-full justify-between gap-4">
+                
+                {/* 1. Header Title */}
+                <div>
+                    <div className="inline-flex items-center gap-1.5 bg-white/10 px-2 py-0.5 rounded text-[10px] font-bold text-blue-200 mb-2 border border-white/10">
+                        <Rocket size={10} className="animate-pulse"/> Coming Soon
                     </div>
-                    <h3 className="text-2xl font-black leading-tight mb-1 truncate">{title}</h3>
-                    <p className="text-blue-200 text-xs md:text-sm">Persiapkan dirimu, jangan sampai terlewat!</p>
+                    <h3 className="text-lg font-black leading-tight line-clamp-2" title={title}>
+                        {title || "Event Mendatang"}
+                    </h3>
+                    <p className="text-[10px] text-blue-200 mt-1 opacity-80">
+                        Persiapkan dirimu, jangan sampai terlewat!
+                    </p>
                 </div>
 
-                {/* Timer Boxes */}
-                <div className="flex flex-wrap justify-center gap-2">
-                    {['Hari', 'Jam', 'Mnt', 'Dtk'].map((label, idx) => {
-                        const val = [timeLeft.days, timeLeft.hours, timeLeft.minutes, timeLeft.seconds][idx];
-                        return (
-                            <div key={label} className="bg-white/10 backdrop-blur-md border border-white/20 p-2 rounded-lg text-center w-16">
-                                <span className="block text-xl font-black">{val}</span>
-                                <span className="text-[9px] uppercase font-bold text-blue-200">{label}</span>
-                            </div>
-                        );
-                    })}
+                {/* 2. Timer Grid */}
+                <div className="grid grid-cols-4 gap-2">
+                    <TimeBox val={timeLeft.days} label="HARI" />
+                    <TimeBox val={timeLeft.hours} label="JAM" />
+                    <TimeBox val={timeLeft.minutes} label="MNT" />
+                    <TimeBox val={timeLeft.seconds} label="DTK" />
                 </div>
             </div>
+        </div>
+    );
+}
+
+// Komponen Kecil untuk Kotak Waktu
+function TimeBox({ val, label }) {
+    return (
+        <div className="flex flex-col items-center bg-white/10 border border-white/10 rounded-lg p-1.5 backdrop-blur-sm">
+            <span className="text-sm md:text-base font-black tabular-nums tracking-tight">
+                {String(val).padStart(2, '0')}
+            </span>
+            <span className="text-[8px] font-bold text-blue-200 mt-0.5">{label}</span>
         </div>
     );
 }
