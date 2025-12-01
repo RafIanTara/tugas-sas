@@ -34,7 +34,7 @@ export default function QuickMenuWidget({
                 )}
 
                 {permissions.canUseAI && (
-                    <MenuButton icon={Cpu} color="text-blue-600" bg="bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20" label="AI Otak" onClick={onOpenAi} />
+                    <MenuButton icon={Cpu} color="text-blue-600" bg="bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20" label="AI TKJ" onClick={onOpenAi} />
                 )}
 
                 <MenuButton icon={Users} color="text-emerald-600" bg="bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20" label="Struktur" onClick={onOpenStruktur} />
