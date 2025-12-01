@@ -36,13 +36,19 @@ export default function ApprovalList({ currentUser }) {
         fetchPending();
     }, [currentUser]);
 
-    const handleApprove = async (userId, name) => {
+    // UPDATE: Menerima targetRole agar bisa mengubah role user dari GUEST ke SISWA/GURU
+    const handleApprove = async (userId, name, targetRole) => {
         try {
+            // Gunakan targetRole dari database, jika kosong fallback ke "SISWA"
+            const newRole = targetRole || "SISWA"; 
+
             await updateDoc(doc(db, "users", userId), {
-                status: "ACTIVE"
+                status: "ACTIVE",
+                role: newRole // <--- INI PERBAIKAN UTAMANYA
             });
+
             setPendingUsers(prev => prev.filter(user => user.id !== userId));
-            setToast({ message: `${name} berhasil disetujui!`, type: 'success' });
+            setToast({ message: `${name} disetujui sebagai ${newRole}!`, type: 'success' });
         } catch (error) {
             setToast({ message: "Gagal approve: " + error.message, type: 'error' });
         }
@@ -82,19 +88,24 @@ export default function ApprovalList({ currentUser }) {
                 {pendingUsers.map(user => (
                     <div key={user.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700/50 p-2 rounded border border-slate-100 dark:border-slate-700">
                         <div>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{user.displayName}</p>
-                            <p className="text-[10px] text-slate-500 uppercase">{user.role} - {user.kelasId}</p>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{user.displayName || user.name}</p>
+                            
+                            {/* Menampilkan Role yang diajukan (targetRole), bukan role saat ini (Guest) */}
+                            <p className="text-[10px] text-slate-500 uppercase">
+                                Request: {user.targetRole || user.role} - {user.kelasId}
+                            </p>
                         </div>
                         <div className="flex gap-2">
                             <button 
-                                onClick={() => handleReject(user.id, user.displayName)}
+                                onClick={() => handleReject(user.id, user.displayName || user.name)}
                                 className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
                                 title="Tolak"
                             >
                                 <X size={14} />
                             </button>
                             <button 
-                                onClick={() => handleApprove(user.id, user.displayName)}
+                                // UPDATE: Mengirim targetRole ke fungsi approve
+                                onClick={() => handleApprove(user.id, user.displayName || user.name, user.targetRole)}
                                 className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200 transition-colors"
                                 title="Setujui"
                             >
