@@ -12,6 +12,15 @@ export default function RunningText() {
                 <span className="flex items-center gap-2">
                     📢 Gtw mau isi apaan, intinya, Welcome to Landing Page TKJ
                 </span>
+                <span className="flex items-center gap-2">
+                    📢 Gtw mau isi apaan, intinya, Welcome to Landing Page TKJ
+                </span>
+                <span className="flex items-center gap-2">
+                    📢 Gtw mau isi apaan, intinya, Welcome to Landing Page TKJ
+                </span>
+                <span className="flex items-center gap-2">
+                    📢 Gtw mau isi apaan, intinya, Welcome to Landing Page TKJ
+                </span>
                 
 
             </div>
