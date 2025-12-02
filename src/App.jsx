@@ -1,7 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 
-// Import Auth Provider
+// Import Auth Provider (Untuk Cek Login User)
 import { AuthProvider } from './context/AuthContext'
 
 // Import Halaman Utama
@@ -13,27 +13,28 @@ import ShowcasePage from './pages/ShowcasePage'
 import EbookPage from './pages/EbookPage'
 import BacaArtikel from './pages/BacaArtikel'
 
-// Import Halaman Auth (BARU)
+// Import Halaman Auth (Login/Register)
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 
-// Import Component Chat Tamu
+// Import Component Tambahan (Global)
 import GuestChat from './components/GuestChat'
 
 function App() {
   return (
-    // Bungkus Router dengan AuthProvider agar state user bisa diakses di mana saja
+    // 1. AuthProvider membungkus semua agar data user bisa diakses di mana saja
     <AuthProvider>
       <Router>
-        {/* CHATBOT TAMU (Global Component) */}
+        
+        {/* 2. Chatbot/GuestChat ditaruh di sini agar muncul di semua halaman */}
         <GuestChat />
 
         <Routes>
-          {/* --- ZONE AUTH (BARU) --- */}
+          {/* --- ZONE AUTHENTICATION --- */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* --- ZONE PUBLIK --- */}
+          {/* --- ZONE PUBLIK (Landing Page & Menu) --- */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/berita" element={<BeritaPage />} />
           <Route path="/galeri" element={<GaleriPage />} />
@@ -43,11 +44,15 @@ function App() {
           <Route path="/ebook" element={<EbookPage />} />
           <Route path="/artikel/:id" element={<BacaArtikel />} />
           
-          {/* --- ZONE DASHBOARD KELAS --- */}
-          {/* Logic proteksi akses akan kita pasang di dalam file DashboardKelas.jsx nanti */}
+          {/* --- ZONE DASHBOARD KELAS (Proteksi User) --- */}
+          {/* DashboardKelas nanti akan mengecek apakah user boleh masuk atau tidak */}
           <Route path="/kelas-x" element={<DashboardKelas kelasId="X" />} />
           <Route path="/kelas-xi" element={<DashboardKelas kelasId="XI" />} />
           <Route path="/kelas-xii" element={<DashboardKelas kelasId="XII" />} />
+
+          {/* Opsional: Route 404 jika halaman tidak ditemukan */}
+          <Route path="*" element={<div className="text-center p-10">404 - Halaman Tidak Ditemukan</div>} />
+
         </Routes>
       </Router>
     </AuthProvider>
