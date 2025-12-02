@@ -10,24 +10,9 @@ export default function RunningText() {
                 
                 {/* --- ISI TEKS BERITA DI SINI --- */}
                 <span className="flex items-center gap-2">
-                    📢 Penerimaan Peserta Didik Baru (PPDB) Tahun 2025 Telah Dibuka!
+                    📢 Gtw mau isi apaan, intinya, Welcome to Landing Page TKJ
                 </span>
-                <span className="flex items-center gap-2 text-yellow-300">
-                    🏆 Selamat Kepada Tim Robotik TKJ Meraih Juara 1 Tingkat Nasional
-                </span>
-                <span className="flex items-center gap-2">
-                    📝 Jadwal Ujian Kompetensi Keahlian (UKK) Dimulai Tanggal 20 Mei 2025
-                </span>
-                <span className="flex items-center gap-2 text-blue-200">
-                    💻 Kunjungi Stand Pameran Karya Siswa di Aula Utama
-                </span>
-                {/* Duplikasi konten agar looping terlihat nyambung (seamless) */}
-                <span className="flex items-center gap-2">
-                    📢 Penerimaan Peserta Didik Baru (PPDB) Tahun 2025 Telah Dibuka!
-                </span>
-                 <span className="flex items-center gap-2 text-yellow-300">
-                    🏆 Selamat Kepada Tim Robotik TKJ Meraih Juara 1 Tingkat Nasional
-                </span>
+                
 
             </div>
 
