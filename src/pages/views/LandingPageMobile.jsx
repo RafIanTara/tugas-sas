@@ -84,7 +84,7 @@ export default function LandingPageMobile({
                             { path: '/', icon: Home, label: 'Beranda' },
                             { path: '/berita', icon: Tag, label: 'Berita & Agenda' },
                             { path: '/showcase', icon: Monitor, label: 'Showcase Project' },
-                            { path: '/ebook', icon: BookOpen, label: 'E-Library' },
+                            { path: '/ebook', icon: BookOpen, label: 'E-Book' },
                         ].map((item, idx) => (
                             <button key={idx} onClick={() => handleNavClick(item.path)} className="w-full text-left p-4 rounded-xl bg-white/5 hover:bg-white/20 text-white font-bold flex items-center justify-between group border border-white/5"><span className="flex items-center gap-3"><item.icon size={20} className="text-emerald-300" /> {item.label}</span><ChevronRight size={18} className="opacity-50" /></button>
                         ))}

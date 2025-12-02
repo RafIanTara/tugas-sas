@@ -42,7 +42,7 @@ export default function LandingPageDesktop({
                         {/* MENU KANAN */}
                         <div className="flex items-center gap-8">
                             <div className={`flex space-x-6 text-sm font-bold transition-colors ${isScrolled ? 'text-slate-600' : 'text-blue-100'}`}>
-                                {['Berita', 'Showcase', 'E-Library'].map((item) => (
+                                {['Berita', 'Showcase', 'E-Book'].map((item) => (
                                     <button key={item} onClick={() => navigate(`/${item.toLowerCase().replace('-', '')}`)} className={`hover:text-[#00994d] transition-colors relative group py-1`}>
                                         {item}
                                         <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#00994d] transition-all duration-300 group-hover:w-full"></span>

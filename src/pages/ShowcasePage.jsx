@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, Search, Users, Image as ImageIcon, Trash2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Search, Users, Image as ImageIcon, Trash2, LayoutDashboard } from 'lucide-react'
 import { collection, query, orderBy, getDocs, deleteDoc, doc } from "firebase/firestore"
 import { db } from "../services/firebase"
 import { useAuth } from '../context/AuthContext'
@@ -27,6 +27,21 @@ export default function ShowcasePage() {
     fetchProjects();
   }, [])
 
+  // --- LOGIC BARU: DASHBOARD REDIRECT ---
+  const handleDashboardRedirect = () => {
+      if (!user) {
+          // Jika belum login, arahkan ke halaman login
+          navigate('/login');
+          return;
+      }
+      
+      // Jika user ada, ambil kelasId (default ke 'x' jika null)
+      const targetKelas = user.kelasId ? user.kelasId.toLowerCase() : 'x';
+      
+      // Arahkan sesuai kelas (Contoh: /kelas-xi)
+      navigate(`/kelas-${targetKelas}`);
+  };
+
   const handleDelete = async (id, namaKelompok) => {
       if(confirm(`[Admin/Guru] Hapus project "${namaKelompok}"?`)) {
           try {
@@ -49,9 +64,14 @@ export default function ShowcasePage() {
                         <p className="text-blue-200 mt-2 max-w-xl">Galeri hasil karya Landing Page siswa-siswi TKJ.</p>
                     </div>
                     {/* INFO UNTUK SISWA */}
-                    <div className="bg-white/10 backdrop-blur p-3 rounded-xl border border-white/20 text-sm">
-                        <p>Ingin mengumpulkan karya?</p>
-                        <button onClick={() => navigate('/login')} className="font-bold underline text-blue-200 hover:text-white">Masuk ke Dashboard Siswa</button>
+                    <div className="bg-white/10 backdrop-blur p-4 rounded-xl border border-white/20 text-sm flex flex-col gap-2">
+                        <p className="text-blue-100">Ingin mengumpulkan karya?</p>
+                        <button 
+                            onClick={handleDashboardRedirect} 
+                            className="bg-[#00994d] hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all shadow-lg"
+                        >
+                            <LayoutDashboard size={16}/> Masuk Dashboard
+                        </button>
                     </div>
                 </div>
             </div>
@@ -73,7 +93,7 @@ export default function ShowcasePage() {
                                 <button onClick={() => handleDelete(item.id, item.kelompok)} className="absolute top-3 left-3 z-20 bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-lg"><Trash2 size={16} /></button>
                             )}
                             <div className="h-48 bg-slate-200 relative overflow-hidden border-b border-slate-100">
-                                {item.imageBase64 ? <img src={item.imageBase64} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"/> : <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-2"><ImageIcon size={32}/><span className="text-xs">No Preview</span></div>}
+                                {item.imageBase64 ? <img src={item.imageBase64} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt={item.kelompok}/> : <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-2"><ImageIcon size={32}/><span className="text-xs">No Preview</span></div>}
                                 <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-[#002f6c] shadow-sm z-10">{item.kelompok}</div>
                             </div>
                             <div className="p-6 flex flex-col flex-1">
