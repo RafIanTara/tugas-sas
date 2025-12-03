@@ -6,7 +6,7 @@ export const ROLES = {
 };
 
 // Email Admin Utama (Backup jika database bermasalah)
-const SUPER_ADMIN_EMAIL = "rafiantara@gmail.com";
+const SUPER_ADMIN_EMAIL = "daus@gmail.com";
 
 export const canAccess = (user, action) => {
   // 1. JIKA BELUM LOGIN
@@ -43,10 +43,10 @@ export const canAccess = (user, action) => {
       return role === ROLES.SISWA || role === ROLES.GURU || role === ROLES.ADMIN;
 
     // --- PENGATURAN & ADMIN ---
-    case 'CONFIGURE_AI_SYSTEM': // Setting API Key
+    case 'CONFIGURE_AI_SYSTEM':
       return role === ROLES.ADMIN;
 
-    case 'MANAGE_CLASS_SETTINGS': // Data Siswa
+    case 'MANAGE_CLASS_SETTINGS': 
       return role === ROLES.ADMIN || role === ROLES.GURU;
 
     case 'APPROVE_USER':

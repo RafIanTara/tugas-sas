@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, LogIn, LogOut, Instagram, Mail, MapPin, Phone, Globe, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, LogIn, LogOut, Instagram, Mail, MapPin, Phone, Globe, ExternalLink, Users } from 'lucide-react';
 import NavbarWidget from '../../components/landing/NavbarWidget';
 import HeroSection from '../../components/landing/HeroSection';
 import EventBanner from '../../components/landing/EventBanner';
@@ -11,6 +11,14 @@ import RunningText from '../../components/landing/RunningText';
 export default function LandingPageDesktop({
     user, navigate, handlers, data, isScrolled
 }) {
+    // DEFINISI MENU NAVBAR AGAR LEBIH RAPI & AMAN
+    const navItems = [
+        { label: 'Berita', path: '/berita' },
+        { label: 'Showcase', path: '/showcase' },
+        { label: 'E-Book', path: '/ebook' },
+        { label: 'Info Kelompok', path: '/info-kelompok' }, // <-- Link Baru
+    ];
+
     return (
         <div className="min-h-screen font-sans text-slate-800 bg-slate-50 selection:bg-[#00994d] selection:text-white">
 
@@ -42,9 +50,13 @@ export default function LandingPageDesktop({
                         {/* MENU KANAN */}
                         <div className="flex items-center gap-8">
                             <div className={`flex space-x-6 text-sm font-bold transition-colors ${isScrolled ? 'text-slate-600' : 'text-blue-100'}`}>
-                                {['Berita', 'Showcase', 'E-Book'].map((item) => (
-                                    <button key={item} onClick={() => navigate(`/${item.toLowerCase().replace('-', '')}`)} className={`hover:text-[#00994d] transition-colors relative group py-1`}>
-                                        {item}
+                                {navItems.map((item) => (
+                                    <button 
+                                        key={item.label} 
+                                        onClick={() => navigate(item.path)} 
+                                        className={`hover:text-[#00994d] transition-colors relative group py-1`}
+                                    >
+                                        {item.label}
                                         <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#00994d] transition-all duration-300 group-hover:w-full"></span>
                                     </button>
                                 ))}
@@ -86,10 +98,7 @@ export default function LandingPageDesktop({
                     </div>
                 </div>
 
-                {/* --- NEWS SECTION CLEAN --- */}
-                {/* Tidak ada wrapper manual, menggunakan style dari NewsSection.jsx */}
                 <NewsSection featuredNews={data.featuredNews} navigate={navigate} />
-                {/* -------------------------- */}
 
                 <section className="bg-[#f0f7ff] py-20 border-t border-blue-100 relative overflow-hidden">
                     <div className="absolute right-0 bottom-0 w-64 h-64 bg-blue-200/20 rounded-full blur-3xl"></div>
@@ -109,7 +118,7 @@ export default function LandingPageDesktop({
                             <p className="text-blue-100 text-sm leading-relaxed border-l-2 border-[#00994d] pl-4">Mencetak teknisi handal yang berakhlak mulia, unggul dalam teknologi, dan siap bersaing global.</p>
                             <div className="flex gap-3 pt-2">
                                 <a href="#" className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center hover:bg-[#00994d] hover:-translate-y-1 transition-all"><Instagram size={18} /></a>
-                                <a href="#" className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center hover:bg-blue-500 hover:-translate-y-1 transition-all"><Globe size={18} /></a>
+                                <a href="https://rafiantara.fun" className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center hover:bg-[#00994d] hover:-translate-y-1 transition-all"><Users size={18} /></a>
                                 <a href="mailto:tkj@smkmuh1metro.sch.id" className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center hover:bg-red-500 hover:-translate-y-1 transition-all"><Mail size={18} /></a>
                             </div>
                         </div>
@@ -123,8 +132,17 @@ export default function LandingPageDesktop({
                         <div className="md:col-span-1">
                             <h4 className="font-bold text-lg mb-8 text-white flex items-center gap-2"><span className="w-8 h-1 bg-[#00994d] rounded-full"></span> Akses Cepat</h4>
                             <ul className="space-y-3 text-sm font-medium text-blue-100">
-                                {['Portal Kelas X', 'Portal Kelas XI', 'Portal Kelas XII', 'Showcase Project'].map((item, idx) => (
-                                    <li key={idx}><button onClick={() => navigate(`/kelas-${item.split(' ')[2]?.toLowerCase() || 'x'}`)} className="hover:text-[#00994d] hover:translate-x-2 transition-all flex items-center gap-2 w-full text-left py-1"><span className="w-1.5 h-1.5 rounded-full bg-[#00994d]"></span> {item}</button></li>
+                                {[
+                                    {name: 'Portal Kelas X', url: '/kelas-x'},
+                                    {name: 'Portal Kelas XI', url: '/kelas-xi'},
+                                    {name: 'Showcase Project', url: '/showcase'},
+                                    {name: 'Info Kelompok', url: '/info-kelompok'} // <-- Tambahan di Footer juga
+                                ].map((item, idx) => (
+                                    <li key={idx}>
+                                        <button onClick={() => navigate(item.url)} className="hover:text-[#00994d] hover:translate-x-2 transition-all flex items-center gap-2 w-full text-left py-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-[#00994d]"></span> {item.name}
+                                        </button>
+                                    </li>
                                 ))}
                             </ul>
                         </div>

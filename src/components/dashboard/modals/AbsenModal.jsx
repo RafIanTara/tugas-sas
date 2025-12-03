@@ -13,7 +13,7 @@ export default function AbsenModal({ isOpen, onClose, kelasId, canInput }) {
     // Data State
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [siswaList, setSiswaList] = useState([]);
-    const [absenData, setAbsenData] = useState({}); // { "Nama Siswa": { status: 'H', ket: '' } }
+    const [absenData, setAbsenData] = useState({}); 
 
     // --- 1. FETCH SISWA (Sekali saja saat buka) ---
     useEffect(() => {

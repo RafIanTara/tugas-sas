@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, LogIn, LogOut, Menu, X, Tag, Monitor, BookOpen, ChevronRight, Home, User, MapPin } from 'lucide-react';
+import { LayoutDashboard, LogIn, LogOut, Menu, X, Tag, Monitor, BookOpen, ChevronRight, Home, User, MapPin, Users } from 'lucide-react';
 import HeroSection from '../../components/landing/HeroSection';
 import EventBanner from '../../components/landing/EventBanner';
 import NewsSection from '../../components/landing/NewsSection';
@@ -23,16 +23,12 @@ export default function LandingPageMobile({
         navigate(path);
     };
 
-    // --- PERBAIKAN LOGIC DASHBOARD ---
-    // Menggunakan handlers.navigateToDashboard agar SAMA PERSIS dengan Desktop
+    // --- LOGIC DASHBOARD ---
     const handleDashboardClick = () => {
         setMobileMenuOpen(false);
-        
-        // Panggil handler pusat. Logic penentuan kelas/admin ada di parent component (LandingPage.jsx/App.jsx)
         if (handlers && handlers.navigateToDashboard) {
             handlers.navigateToDashboard();
         } else {
-            // Fallback safety
             console.error("Handler dashboard tidak ditemukan");
             if (user) navigate('/'); 
             else handlers.setIsLoginOpen(true);
@@ -80,11 +76,13 @@ export default function LandingPageMobile({
                         <div className="text-xl font-black text-[#002f6c] bg-white px-4 py-2 rounded-xl shadow-lg">{data.nextPrayer.time}</div>
                     </div>
                     <div className="space-y-3 flex-1">
+                        {/* LIST MENU UTAMA - SAYA UPDATE DI SINI */}
                         {[
                             { path: '/', icon: Home, label: 'Beranda' },
                             { path: '/berita', icon: Tag, label: 'Berita & Agenda' },
                             { path: '/showcase', icon: Monitor, label: 'Showcase Project' },
                             { path: '/ebook', icon: BookOpen, label: 'E-Book' },
+                            { path: '/info-kelompok', icon: Users, label: 'Info Kelompok' }, // <-- TAMBAHAN MENU BARU
                         ].map((item, idx) => (
                             <button key={idx} onClick={() => handleNavClick(item.path)} className="w-full text-left p-4 rounded-xl bg-white/5 hover:bg-white/20 text-white font-bold flex items-center justify-between group border border-white/5"><span className="flex items-center gap-3"><item.icon size={20} className="text-emerald-300" /> {item.label}</span><ChevronRight size={18} className="opacity-50" /></button>
                         ))}
@@ -99,7 +97,6 @@ export default function LandingPageMobile({
                                     <div><p className="font-bold text-[#002f6c]">{user.displayName}</p><p className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full inline-block font-bold">{user.role}</p></div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    {/* MENGGUNAKAN HANDLER YANG SUDAH DIPERBAIKI */}
                                     <button onClick={handleDashboardClick} className="py-3 bg-[#00994d] text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2"><LayoutDashboard size={16} /> Dashboard</button>
                                     
                                     <button onClick={() => { setMobileMenuOpen(false); handlers.logout() }} className="py-3 bg-red-50 text-red-600 rounded-lg font-bold text-sm flex items-center justify-center gap-2"><LogOut size={16} /> Logout</button>
@@ -112,7 +109,6 @@ export default function LandingPageMobile({
 
             {/* MAIN CONTENT MOBILE */}
             <main className="pt-24 pb-12 overflow-hidden">
-
                 <RunningText />
                 
                 <div className="px-2 mb-8 relative z-10">

@@ -127,7 +127,7 @@ export default function DashboardKelas({ kelasId }) {
         canConfigureAI: canAccess(user, 'CONFIGURE_AI_SYSTEM'),
         canUploadShowcase: canAccess(user, 'UPLOAD_SHOWCASE'),
         canUseAI: canAccess(user, 'USE_AI_CHAT'),
-        canManageAllUsers: canAccess(user, 'MANAGE_ALL_USERS'), // NEW
+        canManageAllUsers: canAccess(user, 'MANAGE_ALL_USERS'),
     };
 
     const viewProps = {
@@ -155,8 +155,6 @@ export default function DashboardKelas({ kelasId }) {
             {activeModal === 'settings' && <SettingsModal isOpen={true} onClose={()=>setActiveModal(null)} kelasId={kelasId} canAccessAI={perms.canConfigureAI} canAccessClass={perms.canViewSettingsClass} />}
             {activeModal === 'ebook' && <EbookModal isOpen={true} onClose={()=>setActiveModal(null)} kelasId={kelasId} user={user} />}
             {activeModal === 'showcase' && <ShowcaseModal isOpen={true} onClose={()=>setActiveModal(null)} user={user} />}
-            
-            {/* NEW MODAL */}
             {activeModal === 'users' && <UserManagementModal isOpen={true} onClose={()=>setActiveModal(null)} currentUser={user} />}
 
             {activeModal === 'info' && (

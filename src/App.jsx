@@ -12,6 +12,7 @@ import GaleriPage from './pages/GaleriPage'
 import ShowcasePage from './pages/ShowcasePage'
 import EbookPage from './pages/EbookPage'
 import BacaArtikel from './pages/BacaArtikel'
+import InfoAnggotaPage from './pages/InfoAnggotaPage'
 
 // Import Halaman Auth (Login/Register)
 import LoginPage from './pages/LoginPage'
@@ -39,6 +40,7 @@ function App() {
           <Route path="/berita" element={<BeritaPage />} />
           <Route path="/galeri" element={<GaleriPage />} />
           <Route path="/showcase" element={<ShowcasePage />} />
+          <Route path="/info-kelompok" element={<InfoAnggotaPage />} />
           
           {/* --- ZONE E-LIBRARY --- */}
           <Route path="/ebook" element={<EbookPage />} />

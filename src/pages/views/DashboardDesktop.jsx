@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Quote } from 'lucide-react'; // Tambah Icon Quote
+import { Calendar, Quote } from 'lucide-react'; 
 import HeaderDashboard from '../../components/dashboard/layout/HeaderDashboard';
 import InfoBoard from '../../components/dashboard/layout/InfoBoard';
 import ApprovalList from '../../components/admin/ApprovalList';
@@ -63,7 +63,7 @@ export default function DashboardDesktop({
                     {/* === LEFT COLUMN (MAIN WORKSPACE) - SPAN 8 === */}
                     <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
                         
-                        {/* A. Quick Menu (Langsung di Atas biar gampang diklik) */}
+                        {/* A. Quick Menu */}
                         <QuickMenuWidget 
                             onOpenNews={() => handlers.setActiveModal('news')} 
                             onOpenGaleri={() => handlers.setActiveModal('galeri')} 
@@ -73,14 +73,14 @@ export default function DashboardDesktop({
                             onOpenShowcase={() => handlers.setActiveModal('showcase')}
                             onOpenUserManager={() => handlers.setActiveModal('users')}
                             permissions={perms} 
-                            minimal={true} // Mode Horizontal
+                            minimal={true} 
                         />
 
                         {/* B. Approval List (Jika Ada) */}
                         {perms.canApprove && <ApprovalList currentUser={user} />}
 
                         {/* C. Info Board */}
-                        <div className="h-fit"> {/* Bungkus biar tinggi menyesuaikan konten */}
+                        <div className="h-fit">
                             <InfoBoard infoData={data.dataInfo} canBroadcast={perms.canBroadcastInfo} onEdit={() => handlers.setActiveModal('info')} />
                         </div>
 
