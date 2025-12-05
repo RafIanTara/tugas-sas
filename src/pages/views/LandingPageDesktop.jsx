@@ -156,7 +156,7 @@ export default function LandingPageDesktop({
                         </div>
                     </div>
                     <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-medium text-blue-200">
-                        <p>© 2025 TKJ SMK Muhammadiyah 1 Metro. All rights reserved.</p>
+                        <p>© 2025 TKJ SMK Muhammadiyah 1 Metro.</p>
                         <p className="flex items-center gap-1">Developed by <span className="text-white font-bold">Rafiantara</span></p>
                     </div>
                 </div>
