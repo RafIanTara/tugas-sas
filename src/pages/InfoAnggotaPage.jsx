@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import imgDaus from '../assets/images/daus.jpg';
+import imgRavita from '../assets/images/ravita.jpeg';
 import {
     Github,
     Instagram,
@@ -20,7 +21,7 @@ export default function InfoAnggotaPage() {
         {
             id: 1,
             name: "Daus (Ketua)",
-            role: "Fullstack Developer",
+            role: "Developer Magang",
             image: imgDaus,
             github: "https://github.com/RafIanTara/",
             wa: "https://wa.me/62895632876627",
@@ -32,23 +33,23 @@ export default function InfoAnggotaPage() {
         {
             id: 2,
             name: "Ravita",
-            role: "UI/UX Designer",
-            image: "https://ui-avatars.com/api/?name=Ravita&background=00994d&color=fff",
+            role: "Anggota",
+            image: imgRavita,
             github: "https://github.com/",
             wa: "https://wa.me/628xxxxxx",
             instagram: "https://instagram.com/",
-            desc: "Mendesain antarmuka yang user-friendly dan estetis.",
+            desc: "Membantu mengisi materi dan artikel.",
             linkBiodata: ""
         },
         {
             id: 3,
             name: "Dicky ",
-            role: "Frontend Engineer",
+            role: "Anggota",
             image: "https://ui-avatars.com/api/?name=DC&background=0f172a&color=fff",
             github: "https://github.com/",
             wa: "https://wa.me/628xxxxxx",
             instagram: "https://instagram.com/",
-            desc: "Mengimplementasikan desain ke dalam kode React.",
+            desc: "...........",
             linkBiodata: ""
         },
     ];

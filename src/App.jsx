@@ -27,7 +27,7 @@ function App() {
     <AuthProvider>
       <Router>
         
-        {/* 2. Chatbot/GuestChat ditaruh di sini agar muncul di semua halaman */}
+        {/* 2.GuestChat  */} 
         <GuestChat />
 
         <Routes>
